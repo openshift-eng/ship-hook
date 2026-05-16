@@ -89,7 +89,7 @@ func (d *Dispatcher) HandlePullRequestEvent(l *logrus.Entry, event github.PullRe
 	for _, p := range d.plugins {
 		plugin := p
 		if !d.resolver.IsEnabled(plugin.Name(), org, repo) {
-			l.WithField("plugin", plugin.Name()).Debug("Plugin not enabled, skipping")
+			l.WithField("plugin", plugin.Name()).Trace("Plugin not enabled, skipping")
 			continue
 		}
 		l.WithField("plugin", plugin.Name()).Debug("Dispatching to plugin")
@@ -118,7 +118,7 @@ func (d *Dispatcher) HandleIssueCommentEvent(l *logrus.Entry, event github.Issue
 	for _, p := range d.plugins {
 		plugin := p
 		if !d.resolver.IsEnabled(plugin.Name(), org, repo) {
-			l.WithField("plugin", plugin.Name()).Debug("Plugin not enabled, skipping")
+			l.WithField("plugin", plugin.Name()).Trace("Plugin not enabled, skipping")
 			continue
 		}
 		l.WithField("plugin", plugin.Name()).Debug("Dispatching to plugin")
@@ -147,7 +147,7 @@ func (d *Dispatcher) HandleReviewEvent(l *logrus.Entry, event github.ReviewEvent
 	for _, p := range d.plugins {
 		plugin := p
 		if !d.resolver.IsEnabled(plugin.Name(), org, repo) {
-			l.WithField("plugin", plugin.Name()).Debug("Plugin not enabled, skipping")
+			l.WithField("plugin", plugin.Name()).Trace("Plugin not enabled, skipping")
 			continue
 		}
 		l.WithField("plugin", plugin.Name()).Debug("Dispatching to plugin")
