@@ -77,7 +77,7 @@ func (d *Dispatcher) Register(p SubPlugin) {
 func (d *Dispatcher) HandlePullRequestEvent(l *logrus.Entry, event github.PullRequestEvent) {
 	org := event.Repo.Owner.Login
 	repo := event.Repo.Name
-	l = l.WithFields(logrus.Fields{
+	l = d.logger.WithFields(l.Data).WithFields(logrus.Fields{
 		"event_type": "pull_request",
 		"org":        org,
 		"repo":       repo,
@@ -89,7 +89,7 @@ func (d *Dispatcher) HandlePullRequestEvent(l *logrus.Entry, event github.PullRe
 	for _, p := range d.plugins {
 		plugin := p
 		if !d.resolver.IsEnabled(plugin.Name(), org, repo) {
-			l.WithField("plugin", plugin.Name()).Debug("Plugin not enabled, skipping")
+			l.WithField("plugin", plugin.Name()).Trace("Plugin not enabled, skipping")
 			continue
 		}
 		l.WithField("plugin", plugin.Name()).Debug("Dispatching to plugin")
@@ -106,7 +106,7 @@ func (d *Dispatcher) HandlePullRequestEvent(l *logrus.Entry, event github.PullRe
 func (d *Dispatcher) HandleIssueCommentEvent(l *logrus.Entry, event github.IssueCommentEvent) {
 	org := event.Repo.Owner.Login
 	repo := event.Repo.Name
-	l = l.WithFields(logrus.Fields{
+	l = d.logger.WithFields(l.Data).WithFields(logrus.Fields{
 		"event_type": "issue_comment",
 		"org":        org,
 		"repo":       repo,
@@ -118,7 +118,7 @@ func (d *Dispatcher) HandleIssueCommentEvent(l *logrus.Entry, event github.Issue
 	for _, p := range d.plugins {
 		plugin := p
 		if !d.resolver.IsEnabled(plugin.Name(), org, repo) {
-			l.WithField("plugin", plugin.Name()).Debug("Plugin not enabled, skipping")
+			l.WithField("plugin", plugin.Name()).Trace("Plugin not enabled, skipping")
 			continue
 		}
 		l.WithField("plugin", plugin.Name()).Debug("Dispatching to plugin")
@@ -135,7 +135,7 @@ func (d *Dispatcher) HandleIssueCommentEvent(l *logrus.Entry, event github.Issue
 func (d *Dispatcher) HandleReviewEvent(l *logrus.Entry, event github.ReviewEvent) {
 	org := event.Repo.Owner.Login
 	repo := event.Repo.Name
-	l = l.WithFields(logrus.Fields{
+	l = d.logger.WithFields(l.Data).WithFields(logrus.Fields{
 		"event_type": "pull_request_review",
 		"org":        org,
 		"repo":       repo,
@@ -147,7 +147,7 @@ func (d *Dispatcher) HandleReviewEvent(l *logrus.Entry, event github.ReviewEvent
 	for _, p := range d.plugins {
 		plugin := p
 		if !d.resolver.IsEnabled(plugin.Name(), org, repo) {
-			l.WithField("plugin", plugin.Name()).Debug("Plugin not enabled, skipping")
+			l.WithField("plugin", plugin.Name()).Trace("Plugin not enabled, skipping")
 			continue
 		}
 		l.WithField("plugin", plugin.Name()).Debug("Dispatching to plugin")
