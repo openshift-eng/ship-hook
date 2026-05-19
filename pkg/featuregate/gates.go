@@ -1,3 +1,5 @@
 package featuregate
 
-var AllGates = []Spec{}
+var AllGates = []Spec{
+	{Name: "coderabbit-auto-label", Default: DefaultOff},
+}

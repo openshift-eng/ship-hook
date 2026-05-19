@@ -15,6 +15,7 @@ import (
 	"github.com/openshift-eng/ship-hook/pkg/config"
 	"github.com/openshift-eng/ship-hook/pkg/dispatch"
 	"github.com/openshift-eng/ship-hook/pkg/featuregate"
+	"github.com/openshift-eng/ship-hook/pkg/permissions"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/example"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/readyforhumans"
 )
@@ -67,6 +68,8 @@ func main() {
 	gates := featuregate.New(os.LookupEnv, featuregate.AllGates...)
 	gates.LogStates(logger)
 
+	perms := permissions.NewStub(nil)
+
 	ghc := fakegithub.NewFakeClient()
 
 	hmacTokenGenerator := func() []byte { return []byte(devHMAC) }
@@ -74,7 +77,7 @@ func main() {
 
 	dispatcher := dispatch.NewDispatcher(logger, resolver)
 	dispatcher.Register(example.New(ghc))
-	dispatcher.Register(readyforhumans.New(ghc, resolver))
+	dispatcher.Register(readyforhumans.New(ghc, resolver, gates, perms))
 
 	eventServer.RegisterHandlePullRequestEvent(dispatcher.HandlePullRequestEvent)
 	eventServer.RegisterHandleIssueCommentEvent(dispatcher.HandleIssueCommentEvent)
