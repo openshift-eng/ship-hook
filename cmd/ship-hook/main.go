@@ -18,6 +18,7 @@ import (
 
 	"github.com/openshift-eng/ship-hook/pkg/config"
 	"github.com/openshift-eng/ship-hook/pkg/dispatch"
+	"github.com/openshift-eng/ship-hook/pkg/featuregate"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/example"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/readyforhumans"
 )
@@ -82,6 +83,9 @@ func main() {
 		logger.WithError(err).Fatal("Failed to load config")
 	}
 	resolver := config.NewResolver(cfg)
+
+	gates := featuregate.New(os.LookupEnv, featuregate.AllGates...)
+	gates.LogStates(logger)
 
 	hmacTokenGenerator := func() []byte {
 		data, err := os.ReadFile(o.hmacSecretFile)
