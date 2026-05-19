@@ -14,6 +14,7 @@ import (
 
 	"github.com/openshift-eng/ship-hook/pkg/config"
 	"github.com/openshift-eng/ship-hook/pkg/dispatch"
+	"github.com/openshift-eng/ship-hook/pkg/featuregate"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/example"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/readyforhumans"
 )
@@ -62,6 +63,9 @@ func main() {
 			},
 		})
 	}
+
+	gates := featuregate.New(os.LookupEnv, featuregate.AllGates...)
+	gates.LogStates(logger)
 
 	ghc := fakegithub.NewFakeClient()
 
