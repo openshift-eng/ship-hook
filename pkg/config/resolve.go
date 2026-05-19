@@ -10,44 +10,6 @@ func NewResolver(cfg *Config) *Resolver {
 	return &Resolver{cfg: cfg}
 }
 
-func (r *Resolver) IsEnabled(pluginName, org, repo string) bool {
-	if r == nil || r.cfg == nil {
-		return false
-	}
-
-	found := false
-	enabled := false
-
-	if topLevel := findPlugin(r.cfg.Plugins, pluginName); topLevel != nil {
-		found = true
-		enabled = !isDisabled(topLevel)
-	}
-
-	if orgCfg, ok := r.cfg.Orgs[org]; ok {
-		if orgPlugin := findPlugin(orgCfg.Plugins, pluginName); orgPlugin != nil {
-			if !found {
-				found = true
-				enabled = !isDisabled(orgPlugin)
-			} else if orgPlugin.Disabled != nil {
-				enabled = !*orgPlugin.Disabled
-			}
-		}
-
-		if repoCfg, ok := orgCfg.Repos[repo]; ok {
-			if repoPlugin := findPlugin(repoCfg.Plugins, pluginName); repoPlugin != nil {
-				if !found {
-					found = true
-					enabled = !isDisabled(repoPlugin)
-				} else if repoPlugin.Disabled != nil {
-					enabled = !*repoPlugin.Disabled
-				}
-			}
-		}
-	}
-
-	return found && enabled
-}
-
 func (r *Resolver) rawConfigLayers(pluginName, org, repo string) []json.RawMessage {
 	if r == nil || r.cfg == nil {
 		return nil
