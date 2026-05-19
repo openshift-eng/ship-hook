@@ -1,0 +1,30 @@
+inheritance: true
+language: en-US
+early_access: false
+reviews:
+  path_filters:
+    - "!vendor/**"
+    - "!go.sum"
+    - "!CLAUDE.md"
+    - "!AGENTS.md"
+    - "!GEMINI.md"
+    - "!.claude/**"
+    - "!.cursor/**"
+    - "!.gemini/**"
+    - "!.opencode/**"
+  profile: chill
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  tools:
+    shellcheck:
+      enabled: true
+    markdownlint:
+      enabled: true
+  auto_review:
+    enabled: true
+    drafts: false
+chat:
+  auto_reply: true
