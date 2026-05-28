@@ -40,21 +40,21 @@ func (r *recordingPlugin) HandlePullRequestEvent(_ context.Context, _ *logrus.En
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.prEvents = append(r.prEvents, event)
-	return Handled("")
+	return Acted("")
 }
 
 func (r *recordingPlugin) HandleIssueCommentEvent(_ context.Context, _ *logrus.Entry, event github.IssueCommentEvent) HandlerResult {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.issueCommentEvents = append(r.issueCommentEvents, event)
-	return Handled("")
+	return Acted("")
 }
 
 func (r *recordingPlugin) HandleReviewEvent(_ context.Context, _ *logrus.Entry, event github.ReviewEvent) HandlerResult {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.reviewEvents = append(r.reviewEvents, event)
-	return Handled("")
+	return Acted("")
 }
 
 func enabledResolver(pluginNames ...string) *config.Resolver {

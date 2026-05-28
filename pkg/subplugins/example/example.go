@@ -28,20 +28,20 @@ func (p *Plugin) Name() string {
 	return "example"
 }
 
-func (p *Plugin) HandlePullRequestEvent(_ context.Context, l *logrus.Entry, event github.PullRequestEvent) dispatch.HandlerResult {
+func (p *Plugin) HandlePullRequestEvent(_ context.Context, _ *logrus.Entry, event github.PullRequestEvent) dispatch.HandlerResult {
 	org := event.Repo.Owner.Login
 	repo := event.Repo.Name
 	number := event.Number
 	if err := p.ghc.CreateComment(org, repo, number, fmt.Sprintf("example plugin noticed PR #%d", number)); err != nil {
-		l.WithError(err).Error("Failed to create comment")
+		return dispatch.Errored("failed to create comment", err)
 	}
-	return dispatch.Handled("")
+	return dispatch.Acted("commented on PR")
 }
 
 func (p *Plugin) HandleIssueCommentEvent(_ context.Context, _ *logrus.Entry, _ github.IssueCommentEvent) dispatch.HandlerResult {
-	return dispatch.Handled("")
+	return dispatch.Skipped("only handles pull request events")
 }
 
 func (p *Plugin) HandleReviewEvent(_ context.Context, _ *logrus.Entry, _ github.ReviewEvent) dispatch.HandlerResult {
-	return dispatch.Handled("")
+	return dispatch.Skipped("only handles pull request events")
 }

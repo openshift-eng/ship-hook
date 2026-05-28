@@ -5,30 +5,47 @@ Implemented
 
 ## Motivation
 
-During live testing on ota-stage, the ready-for-humans plugin silently did nothing when receiving review events. Sub-plugin handlers returned void, so neither the dispatcher nor an operator could determine whether a plugin considered an event relevant or why it was skipped. The dispatcher itself had no logging for event receipt, routing decisions, or handler outcomes.
+Sub-plugin handlers need to report their outcome back to the dispatcher so the dispatcher can log, metric-label, and expose the result to downstream tooling (log explorers, dashboards).
 
-This is a gap in the sub-plugin contract: handlers should report their outcome back to the dispatcher.
+The original `HandlerResult{Relevant bool, Reason string}` collapsed three distinct "didn't act" situations into a single boolean, making it impossible for downstream consumers to distinguish noise (wrong event type) from meaningful inaction (domain logic ran, no mutation needed) without pattern-matching on reason strings.
+
+A second gap was error handling: handlers that failed logged the error themselves and still returned a success result, hiding failures from the dispatcher and metrics.
 
 ## Design
 
-### HandlerResult Type
+### Outcome Type
 
-A new `HandlerResult` struct in the `dispatch` package:
+A five-value `Outcome` enum classifies every handler invocation:
+
+| Outcome | Constructor | Meaning | Log level |
+|---------|-------------|---------|-----------|
+| `OutcomeSkipped` | `Skipped(reason)` | Wrong event type entirely | Trace |
+| `OutcomeFiltered` | `Filtered(reason)` | Right event type, properties don't match | Debug |
+| `OutcomeNoChange` | `NoChange(reason)` | Domain logic ran, no mutation needed | Info |
+| `OutcomeActed` | `Acted(reason)` | Plugin mutated state | Info |
+| `OutcomeErrored` | `Errored(reason, err)` | Handler failed | Error |
+
+The zero value is `OutcomeSkipped`, so an uninitialized `HandlerResult{}` means "didn't do anything."
+
+### HandlerResult Struct
 
 ```go
 type HandlerResult struct {
-    Relevant bool
-    Reason   string
+    Outcome Outcome
+    Reason  string
+    Err     error
 }
 ```
 
-Two convenience constructors:
-- `Irrelevant(reason)` — the event did not match the plugin's criteria
-- `Handled(reason)` — the plugin acted on the event
+Errors are captured in the result itself rather than as a second return value. The dispatcher logs the error (at Error level) and records it in metrics. Plugins should not log errors themselves — return `Errored(reason, err)` and let the dispatcher handle it.
 
-### Updated SubPlugin Interface
+### Prometheus Metric
 
-All three handler methods now return `HandlerResult`:
+The histogram `shiphook_plugin_handle_duration_seconds` uses an `outcome` label with values `skipped`, `filtered`, `no_change`, `acted`, `errored`.
+
+### SubPlugin Interface
+
+Handler method signatures are unchanged — they return `HandlerResult`:
 
 ```go
 type SubPlugin interface {
@@ -39,25 +56,22 @@ type SubPlugin interface {
 }
 ```
 
-It is up to each plugin to decide what "relevant" means. A slash-command plugin receives all comment events but only considers ones containing the command as relevant.
+### Choosing the Right Outcome
 
-### Dispatcher Logging
+Use `Skipped` when the handler does not process this event type at all. A review-only plugin receiving a pull_request event returns `Skipped("only handles review events")`.
 
-The dispatcher now logs at four points:
+Use `Filtered` when the event type is correct but the event's properties (action, user, state) do not match the plugin's criteria. The handler checked surface properties and stopped before entering its core domain logic.
 
-1. **Event received** (Info): event type, org, repo, PR number, action
-2. **Plugin not enabled** (Debug): when `IsEnabled` returns false
-3. **Dispatching to plugin** (Debug): before launching goroutine
-4. **Plugin completed** (Info if relevant, Debug if irrelevant): `relevant` and `reason` fields
+Use `NoChange` when the plugin's domain logic ran and correctly determined no mutation was needed. The handler made at least one significant business-logic decision specific to its purpose.
 
-### Sub-Plugin Updates
+Use `Acted` when the plugin mutated state (added a label, posted a comment, etc.).
 
-Each sub-plugin handler returns an appropriate result:
-- Early exits return `Irrelevant("reason describing why")`
-- Success paths return `Handled("description of action taken")`
-- Handlers for unsupported event types return `Irrelevant("only handles X events")`
+Use `Errored` when the handler encountered an error. Return the error via `Errored(reason, err)` — do not log it manually.
+
+**Boundary guidance (Filtered vs NoChange):** if the handler has not yet made any decision specific to its core purpose, use `Filtered`. Once the handler enters logic that evaluates whether its mutation is needed, use `NoChange`. For example, in a label-adding plugin: checking whether the reviewer matches or the action is correct is filtering (prerequisites). Checking whether the label already exists is a domain decision (NoChange).
 
 ## Verification
 
 1. `make verify` passes
-2. Dev server test: send a review event, confirm dispatcher logs show event receipt, plugin dispatch, and relevance result
+2. Dev server test: send events, confirm dispatcher logs show all outcomes (`"skipped"`, `"filtered"`, `"no_change"`, `"acted"`, `"errored"`) at the correct log levels
+3. Check `/metrics` endpoint for `shiphook_plugin_handle_duration_seconds` with `outcome` label
