@@ -2,7 +2,6 @@ package dispatch
 
 import (
 	"context"
-	"strconv"
 	"sync"
 	"time"
 
@@ -17,25 +16,63 @@ var pluginHandleDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    "shiphook_plugin_handle_duration_seconds",
 	Help:    "How long a sub-plugin took to handle an event.",
 	Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
-}, []string{"event_type", "plugin", "took_action"})
+}, []string{"event_type", "plugin", "outcome"})
 
 func init() {
 	prometheus.MustRegister(pluginHandleDuration)
 }
 
-// HandlerResult is returned by sub-plugin handlers to report whether the event
-// was relevant to the plugin.
+type Outcome int
+
+const (
+	OutcomeSkipped Outcome = iota
+	OutcomeFiltered
+	OutcomeNoChange
+	OutcomeActed
+	OutcomeErrored
+)
+
+func (o Outcome) String() string {
+	switch o {
+	case OutcomeSkipped:
+		return "skipped"
+	case OutcomeFiltered:
+		return "filtered"
+	case OutcomeNoChange:
+		return "no_change"
+	case OutcomeActed:
+		return "acted"
+	case OutcomeErrored:
+		return "errored"
+	default:
+		return "unknown"
+	}
+}
+
 type HandlerResult struct {
-	Relevant bool
-	Reason   string
+	Outcome Outcome
+	Reason  string
+	Err     error
 }
 
-func Irrelevant(reason string) HandlerResult {
-	return HandlerResult{Relevant: false, Reason: reason}
+func Skipped(reason string) HandlerResult {
+	return HandlerResult{Outcome: OutcomeSkipped, Reason: reason}
 }
 
-func Handled(reason string) HandlerResult {
-	return HandlerResult{Relevant: true, Reason: reason}
+func Filtered(reason string) HandlerResult {
+	return HandlerResult{Outcome: OutcomeFiltered, Reason: reason}
+}
+
+func NoChange(reason string) HandlerResult {
+	return HandlerResult{Outcome: OutcomeNoChange, Reason: reason}
+}
+
+func Acted(reason string) HandlerResult {
+	return HandlerResult{Outcome: OutcomeActed, Reason: reason}
+}
+
+func Errored(reason string, err error) HandlerResult {
+	return HandlerResult{Outcome: OutcomeErrored, Reason: reason, Err: err}
 }
 
 // SubPlugin defines the interface that all SHIP Hook sub-plugins must implement.
@@ -162,21 +199,33 @@ func (d *Dispatcher) HandleReviewEvent(l *logrus.Entry, event github.ReviewEvent
 }
 
 func recordResult(l *logrus.Entry, eventType, pluginName string, result HandlerResult, duration time.Duration) {
-	tookAction := strconv.FormatBool(result.Relevant)
-	pluginHandleDuration.WithLabelValues(eventType, pluginName, tookAction).Observe(duration.Seconds())
+	pluginHandleDuration.WithLabelValues(eventType, pluginName, result.Outcome.String()).Observe(duration.Seconds())
 
 	entry := l.WithFields(logrus.Fields{
 		"plugin":   pluginName,
-		"relevant": result.Relevant,
+		"outcome":  result.Outcome.String(),
 		"duration": duration.String(),
 	})
 	if result.Reason != "" {
 		entry = entry.WithField("reason", result.Reason)
 	}
-	if result.Relevant {
-		entry.Info("Plugin completed")
-	} else {
+	if result.Err != nil {
+		entry = entry.WithError(result.Err)
+	}
+
+	switch result.Outcome {
+	case OutcomeSkipped:
+		entry.Trace("Plugin completed")
+	case OutcomeFiltered:
 		entry.Debug("Plugin completed")
+	case OutcomeNoChange:
+		entry.Info("Plugin completed")
+	case OutcomeActed:
+		entry.Info("Plugin completed")
+	case OutcomeErrored:
+		entry.Error("Plugin completed")
+	default:
+		entry.Error("Plugin completed")
 	}
 }
 

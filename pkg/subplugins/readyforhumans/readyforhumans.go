@@ -41,40 +41,40 @@ func New(ghc githubClient, resolver *config.Resolver) *Plugin {
 func (p *Plugin) Name() string { return pluginName }
 
 func (p *Plugin) HandlePullRequestEvent(_ context.Context, _ *logrus.Entry, _ github.PullRequestEvent) dispatch.HandlerResult {
-	return dispatch.Irrelevant("only handles review events")
+	return dispatch.Skipped("only handles review events")
 }
 
 func (p *Plugin) HandleIssueCommentEvent(_ context.Context, _ *logrus.Entry, _ github.IssueCommentEvent) dispatch.HandlerResult {
-	return dispatch.Irrelevant("only handles review events")
+	return dispatch.Skipped("only handles review events")
 }
 
-func (p *Plugin) HandleReviewEvent(_ context.Context, l *logrus.Entry, re github.ReviewEvent) dispatch.HandlerResult {
+func (p *Plugin) HandleReviewEvent(_ context.Context, _ *logrus.Entry, re github.ReviewEvent) dispatch.HandlerResult {
 	org := re.Repo.Owner.Login
 	repo := re.Repo.Name
 	cfg := config.ResolvePluginConfig(p.resolver, pluginName, defaultConfig(), org, repo)
 
+	if prHasLabel(re.PullRequest, cfg.Label) {
+		return dispatch.NoChange("PR already has label")
+	}
+
 	if re.Review.User.Login != cfg.BotLogin {
-		return dispatch.Irrelevant("reviewer is not the configured bot")
+		return dispatch.Filtered("reviewer is not the configured bot")
 	}
 
 	if re.Action != github.ReviewActionSubmitted {
-		return dispatch.Irrelevant("action is not submitted")
+		return dispatch.Filtered("action is not submitted")
 	}
 
 	if !strings.EqualFold(string(re.Review.State), string(github.ReviewStateApproved)) {
-		return dispatch.Irrelevant("review state is not approved")
-	}
-
-	if prHasLabel(re.PullRequest, cfg.Label) {
-		return dispatch.Irrelevant("PR already has label")
+		return dispatch.NoChange("review state is not approved")
 	}
 
 	number := re.PullRequest.Number
 
 	if err := p.ghc.AddLabel(org, repo, number, cfg.Label); err != nil {
-		l.WithError(err).Error("Failed to add ready-for-humans label")
+		return dispatch.Errored("failed to add ready-for-humans label", err)
 	}
-	return dispatch.Handled("added ready-for-humans label")
+	return dispatch.Acted("added ready-for-humans label")
 }
 
 func prHasLabel(pr github.PullRequest, label string) bool {
