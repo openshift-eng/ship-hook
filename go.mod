@@ -3,6 +3,7 @@ module github.com/openshift-eng/ship-hook
 go 1.25.8
 
 require (
+	github.com/fsnotify/fsnotify v1.8.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/sirupsen/logrus v1.9.4
 	sigs.k8s.io/prow v0.0.0-20260421061351-d25a1786785e
@@ -64,7 +65,6 @@ require (
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/felixge/fgprof v0.9.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/fvbommel/sortorder v1.0.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect

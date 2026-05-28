@@ -84,6 +84,9 @@ func main() {
 	}
 	resolver := config.NewResolver(cfg)
 
+	reloadCtx, reloadCancel := context.WithCancel(context.Background())
+	go config.StartReloadLoop(reloadCtx, resolver, o.configPath, o.supplementalDir, 5*time.Minute, logger)
+
 	gates := featuregate.New(os.LookupEnv, featuregate.AllGates...)
 	gates.LogStates(logger)
 
@@ -116,6 +119,7 @@ func main() {
 	eventServer.RegisterReviewEventHandler(dispatcher.HandleReviewEvent)
 
 	interrupts.OnInterrupt(func() {
+		reloadCancel()
 		eventServer.GracefulShutdown()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
