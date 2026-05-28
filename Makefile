@@ -19,7 +19,15 @@ vet:
 lint:
 	golangci-lint run ./...
 
-verify: vet lint test
+fmt-check:
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+		echo "The following files are not gofmt'd:"; \
+		echo "$$unformatted"; \
+		exit 1; \
+	fi
+
+verify: vet lint fmt-check test
 
 image: build
 	docker build -t $(IMAGE_REPO):latest -f images/ship-hook/Dockerfile $(OUTPUT_DIR)/
