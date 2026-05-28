@@ -1,10 +1,13 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"sigs.k8s.io/yaml"
 )
@@ -515,6 +518,66 @@ func TestResolvePluginConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolver_UpdateConfig(t *testing.T) {
+	cfg1 := &Config{Plugins: []PluginConfig{{Name: "p"}}}
+	r := NewResolver(cfg1)
+
+	if !r.IsEnabled("p", "org", "repo") {
+		t.Fatal("expected p to be enabled with initial config")
+	}
+
+	cfg2 := &Config{Plugins: []PluginConfig{{Name: "p", Disabled: boolPtr(true)}}}
+	r.UpdateConfig(cfg2)
+
+	if r.IsEnabled("p", "org", "repo") {
+		t.Fatal("expected p to be disabled after UpdateConfig")
+	}
+
+	if r.Config() != cfg2 {
+		t.Fatal("Config() should return the updated config")
+	}
+}
+
+func TestResolver_ConcurrentAccess(t *testing.T) {
+	cfg1 := &Config{Plugins: []PluginConfig{{Name: "p"}}}
+	cfg2 := &Config{Plugins: []PluginConfig{{Name: "p", Disabled: boolPtr(true)}}}
+	r := NewResolver(cfg1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	go func() {
+		for i := 0; ; i++ {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			if i%2 == 0 {
+				r.UpdateConfig(cfg2)
+			} else {
+				r.UpdateConfig(cfg1)
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Go(func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+				r.IsEnabled("p", "org", "repo")
+			}
+		})
+	}
+
+	wg.Wait()
 }
 
 func TestYAMLRoundTrip(t *testing.T) {

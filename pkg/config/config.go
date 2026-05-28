@@ -12,8 +12,8 @@ import (
 
 type Config struct {
 	ShipHook ShipHookConfig       `json:"ship_hook,omitempty"`
-	Plugins []PluginConfig       `json:"plugins,omitempty"`
-	Orgs    map[string]OrgConfig `json:"orgs,omitempty"`
+	Plugins  []PluginConfig       `json:"plugins,omitempty"`
+	Orgs     map[string]OrgConfig `json:"orgs,omitempty"`
 }
 
 type ShipHookConfig struct{}
@@ -25,8 +25,8 @@ type PluginConfig struct {
 }
 
 type OrgConfig struct {
-	Plugins []PluginConfig         `json:"plugins,omitempty"`
-	Repos   map[string]RepoConfig  `json:"repos,omitempty"`
+	Plugins []PluginConfig        `json:"plugins,omitempty"`
+	Repos   map[string]RepoConfig `json:"repos,omitempty"`
 }
 
 type RepoConfig struct {

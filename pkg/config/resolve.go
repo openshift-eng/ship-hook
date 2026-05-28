@@ -1,29 +1,46 @@
 package config
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"sync/atomic"
+)
 
 type Resolver struct {
-	cfg *Config
+	cfg atomic.Pointer[Config]
 }
 
 func NewResolver(cfg *Config) *Resolver {
-	return &Resolver{cfg: cfg}
+	r := &Resolver{}
+	r.cfg.Store(cfg)
+	return r
+}
+
+func (r *Resolver) UpdateConfig(cfg *Config) {
+	r.cfg.Store(cfg)
+}
+
+func (r *Resolver) Config() *Config {
+	return r.cfg.Load()
 }
 
 func (r *Resolver) IsEnabled(pluginName, org, repo string) bool {
-	if r == nil || r.cfg == nil {
+	if r == nil {
+		return false
+	}
+	cfg := r.cfg.Load()
+	if cfg == nil {
 		return false
 	}
 
 	found := false
 	enabled := false
 
-	if topLevel := findPlugin(r.cfg.Plugins, pluginName); topLevel != nil {
+	if topLevel := findPlugin(cfg.Plugins, pluginName); topLevel != nil {
 		found = true
 		enabled = !isDisabled(topLevel)
 	}
 
-	if orgCfg, ok := r.cfg.Orgs[org]; ok {
+	if orgCfg, ok := cfg.Orgs[org]; ok {
 		if orgPlugin := findPlugin(orgCfg.Plugins, pluginName); orgPlugin != nil {
 			if !found {
 				found = true
@@ -49,17 +66,21 @@ func (r *Resolver) IsEnabled(pluginName, org, repo string) bool {
 }
 
 func (r *Resolver) rawConfigLayers(pluginName, org, repo string) []json.RawMessage {
-	if r == nil || r.cfg == nil {
+	if r == nil {
+		return nil
+	}
+	cfg := r.cfg.Load()
+	if cfg == nil {
 		return nil
 	}
 
 	var layers []json.RawMessage
 
-	if topLevel := findPlugin(r.cfg.Plugins, pluginName); topLevel != nil && len(topLevel.Config) > 0 {
+	if topLevel := findPlugin(cfg.Plugins, pluginName); topLevel != nil && len(topLevel.Config) > 0 {
 		layers = append(layers, topLevel.Config)
 	}
 
-	if orgCfg, ok := r.cfg.Orgs[org]; ok {
+	if orgCfg, ok := cfg.Orgs[org]; ok {
 		if orgPlugin := findPlugin(orgCfg.Plugins, pluginName); orgPlugin != nil && len(orgPlugin.Config) > 0 {
 			layers = append(layers, orgPlugin.Config)
 		}
