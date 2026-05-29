@@ -68,4 +68,61 @@ make dev-state                     # inspect mutations
 make dev-reset                     # clear state
 ```
 
+## Log Explorer
+
+A CLI tool for investigating plugin behavior across multi-replica log files.
+
+```shell
+make build-explorer    # compile to _output/ship-hook-explorer
+```
+
+### Usage
+
+```shell
+ship-hook-explorer --plugin=<name> [flags] <logfile> [logfile...]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--plugin` | (required) | Plugin name to focus on |
+| `--show` | `domain` | Display level: `acted`, `domain`, `all` |
+| `--verbose`, `-v` | false | Show intermediate plugin log lines under each event |
+| `--org` | | Filter by GitHub org |
+| `--repo` | | Filter by repo |
+| `--pr` | | Filter by PR number |
+| `--since` | | Events after this time (RFC 3339 or YYYY-MM-DD) |
+| `--until` | | Events before this time |
+| `--json` | false | JSON output per matched event |
+
+Accepts `-` for stdin (pipe from `oc logs`) and `.gz` files.
+
+### Display levels
+
+| Level | What's shown |
+|-------|-------------|
+| `acted` | ✅ acted, ❌ errored |
+| `domain` | ✅ acted, ❌ errored, 💤 no_change |
+| `all` | ✅ acted, ❌ errored, 💤 no_change, 🔽 filtered, ⬜ skipped |
+
+### Examples
+
+```bash
+# Show domain-relevant events for ready-for-humans across two replica logs
+ship-hook-explorer --plugin=ready-for-humans pod1.log pod2.log
+
+# Show only events where the plugin took action
+ship-hook-explorer --plugin=ready-for-humans --show=acted pod1.log pod2.log
+
+# Show everything including filtered/skipped, with intermediate logs
+ship-hook-explorer --plugin=ready-for-humans --show=all -v pod1.log pod2.log
+
+# Pipe from oc logs
+oc logs -n ci deploy/ship-hook -c ship-hook | ship-hook-explorer --plugin=ready-for-humans -
+
+# Filter to a specific PR
+ship-hook-explorer --plugin=ready-for-humans --pr=3557 pod1.log pod2.log
+```
+
+See `specs/009-log-explorer.md` for the full design.
+
 See `AGENTS.md` for detailed architecture and contribution guidelines.
