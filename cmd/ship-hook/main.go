@@ -18,10 +18,10 @@ import (
 
 	orgdatacore "github.com/openshift-eng/cyborg-data/go"
 
+	"github.com/openshift-eng/ship-hook/pkg/authz"
 	"github.com/openshift-eng/ship-hook/pkg/config"
 	"github.com/openshift-eng/ship-hook/pkg/dispatch"
 	"github.com/openshift-eng/ship-hook/pkg/featuregate"
-	"github.com/openshift-eng/ship-hook/pkg/permissions"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/example"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/readyforhumans"
 )
@@ -95,10 +95,15 @@ func main() {
 	gates := featuregate.New(os.LookupEnv, featuregate.AllGates...)
 	gates.LogStates(logger)
 
-	var coderabbitAccessFn func(string) bool
+	policy := authz.NewPolicy().
+		Allow(authz.KnownToCyborg(), "access-coderabbit", authz.Global())
+
+	var identityResolver authz.IdentityResolver
 	ctx, cyborgCancel := context.WithCancel(context.Background())
 	defer cyborgCancel()
-	if o.cyborgCredentialsFile != "" {
+	if o.cyborgCredentialsFile == "" {
+		logger.Warn("No cyborg credentials configured: all cyborg-dependent authorization checks will deny")
+	} else {
 		creds, err := os.ReadFile(o.cyborgCredentialsFile)
 		if err != nil {
 			logger.WithError(err).Fatal("Failed to read cyborg credentials file")
@@ -125,11 +130,9 @@ func main() {
 			}
 		}()
 
-		coderabbitAccessFn = func(login string) bool {
-			return cyborgService.GetEmployeeByGitHubID(login) != nil
-		}
+		identityResolver = cyborgService
 	}
-	perms := permissions.NewStub(coderabbitAccessFn)
+	authorizer := authz.NewAuthorizer(policy, identityResolver)
 
 	hmacTokenGenerator := func() []byte {
 		data, err := os.ReadFile(o.hmacSecretFile)
@@ -153,7 +156,7 @@ func main() {
 
 	dispatcher := dispatch.NewDispatcher(logger, resolver)
 	dispatcher.Register(example.New(ghc))
-	dispatcher.Register(readyforhumans.New(ghc, resolver, gates, perms))
+	dispatcher.Register(readyforhumans.New(ghc, resolver, gates, authorizer))
 
 	eventServer.RegisterHandlePullRequestEvent(dispatcher.HandlePullRequestEvent)
 	eventServer.RegisterHandleIssueCommentEvent(dispatcher.HandleIssueCommentEvent)

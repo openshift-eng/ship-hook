@@ -8,7 +8,7 @@ import (
 
 	orgdatacore "github.com/openshift-eng/cyborg-data/go"
 
-	"github.com/openshift-eng/ship-hook/pkg/permissions"
+	"github.com/openshift-eng/ship-hook/pkg/authz"
 )
 
 func TestCyborgEmployeeLookup(t *testing.T) {
@@ -34,7 +34,7 @@ func TestCyborgEmployeeLookup(t *testing.T) {
 	}
 }
 
-func TestCyborgPermissionsIntegration(t *testing.T) {
+func TestCyborgAuthzIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	source := orgdatacore.NewFakeDataSource(orgdatacore.CreateTestDataJSON())
@@ -43,14 +43,14 @@ func TestCyborgPermissionsIntegration(t *testing.T) {
 		t.Fatalf("Failed to load cyborg data: %v", err)
 	}
 
-	perms := permissions.NewStub(func(login string) bool {
-		return service.GetEmployeeByGitHubID(login) != nil
-	})
+	policy := authz.NewPolicy().
+		Allow(authz.KnownToCyborg(), "access-coderabbit", authz.Global())
+	authorizer := authz.NewAuthorizer(policy, service)
 
-	if !perms.IsAllowed("ghuser1", "access", "coderabbit") {
+	if !authorizer.IsAllowed("ghuser1", "access-coderabbit", authz.Repo("org", "repo")) {
 		t.Error("Expected ghuser1 (known employee) to have coderabbit access")
 	}
-	if perms.IsAllowed("outsider", "access", "coderabbit") {
+	if authorizer.IsAllowed("outsider", "access-coderabbit", authz.Repo("org", "repo")) {
 		t.Error("Expected outsider to not have coderabbit access")
 	}
 }
