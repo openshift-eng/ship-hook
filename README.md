@@ -9,6 +9,8 @@ SHIP Hook is an external [Prow](https://docs.prow.k8s.io/) plugin that receives 
 | `ready-for-humans` | Adds a label to PRs when [CodeRabbit](https://coderabbit.ai/) submits an approving review, signaling the PR is ready for human review |
 | `example` | Reference implementation that logs received events |
 
+> _This README was last verified on 2026-05-29._
+
 ## Configuration
 
 SHIP Hook uses a YAML config file with layered overrides at the top-level, organization, and repository levels. Lower levels override upper levels.
