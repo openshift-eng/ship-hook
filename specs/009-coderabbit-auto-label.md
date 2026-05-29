@@ -13,7 +13,7 @@ When a PR is opened by someone without CodeRabbit access, the label should be ad
 
 ### Feature Gate
 
-The entire behavior is behind the `coderabbit-auto-label` feature gate (default OFF). When the gate is off, `HandlePullRequestEvent` remains a no-op. The existing review-based labeling is unaffected by the gate.
+The entire behavior is behind the `coderabbit-auto-label` feature gate (default ON). When the gate is off, `HandlePullRequestEvent` remains a no-op. The existing review-based labeling is unaffected by the gate.
 
 ### Permissions Interface
 
