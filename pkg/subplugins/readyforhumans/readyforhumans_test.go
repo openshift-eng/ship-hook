@@ -3,23 +3,18 @@ package readyforhumans
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/sirupsen/logrus"
 	"sigs.k8s.io/prow/pkg/github"
+	"sigs.k8s.io/prow/pkg/github/fakegithub"
 
 	"github.com/openshift-eng/ship-hook/pkg/config"
+	"github.com/openshift-eng/ship-hook/pkg/featuregate"
+	"github.com/openshift-eng/ship-hook/pkg/permissions"
+	"github.com/openshift-eng/ship-hook/pkg/testhelpers"
 )
-
-type fakeClient struct {
-	labelsAdded []string
-}
-
-func (c *fakeClient) AddLabel(org, repo string, number int, label string) error {
-	c.labelsAdded = append(c.labelsAdded, fmt.Sprintf("%s/%s#%d:%s", org, repo, number, label))
-	return nil
-}
 
 func nilResolver() *config.Resolver { return nil }
 
@@ -32,6 +27,97 @@ func resolverWithConfig(pluginName string, rawConfig string) *config.Resolver {
 	})
 }
 
+func gateDisabled() *featuregate.Gates {
+	return featuregate.New(func(string) (string, bool) { return "", false })
+}
+
+func gateEnabled() *featuregate.Gates {
+	return featuregate.New(
+		func(key string) (string, bool) {
+			if key == "SHIP_HOOK_FEATURE_CODERABBIT_AUTO_LABEL" {
+				return "true", true
+			}
+			return "", false
+		},
+		featuregate.Spec{Name: "coderabbit-auto-label", Default: featuregate.DefaultOff},
+	)
+}
+
+func allowAll() permissions.Checker {
+	return permissions.NewStub(func(string) bool { return true })
+}
+
+func denyAll() permissions.Checker {
+	return permissions.NewStub(nil)
+}
+
+func TestHandlePullRequestEvent(t *testing.T) {
+	testCases := []struct {
+		name        string
+		gates       *featuregate.Gates
+		perms       permissions.Checker
+		resolver    *config.Resolver
+		event       github.PullRequestEvent
+		expectAdded []string
+	}{
+		{
+			name:  "gate disabled, no label",
+			gates: gateDisabled(),
+			perms: denyAll(),
+			event: testhelpers.NewPR("org", "repo", 1).WithAuthor("external").PullRequestEvent(github.PullRequestActionOpened),
+		},
+		{
+			name:  "gate enabled, action not opened",
+			gates: gateEnabled(),
+			perms: denyAll(),
+			event: testhelpers.NewPR("org", "repo", 1).WithAuthor("external").PullRequestEvent(github.PullRequestActionSynchronize),
+		},
+		{
+			name:  "gate enabled, author has coderabbit access",
+			gates: gateEnabled(),
+			perms: allowAll(),
+			event: testhelpers.NewPR("org", "repo", 42).WithAuthor("rh-employee").PullRequestEvent(github.PullRequestActionOpened),
+		},
+		{
+			name:        "gate enabled, author without access, label added",
+			gates:       gateEnabled(),
+			perms:       denyAll(),
+			event:       testhelpers.NewPR("org", "repo", 42).WithAuthor("external-contributor").PullRequestEvent(github.PullRequestActionOpened),
+			expectAdded: []string{"org/repo#42:ready-for-human-review"},
+		},
+		{
+			name:        "gate enabled, author without access, custom label from config",
+			gates:       gateEnabled(),
+			perms:       denyAll(),
+			resolver:    resolverWithConfig(pluginName, `{"label":"custom-label"}`),
+			event:       testhelpers.NewPR("org", "repo", 10).WithAuthor("external").PullRequestEvent(github.PullRequestActionOpened),
+			expectAdded: []string{"org/repo#10:custom-label"},
+		},
+		{
+			name:  "gate enabled, label already present",
+			gates: gateEnabled(),
+			perms: denyAll(),
+			event: testhelpers.NewPR("org", "repo", 42).WithAuthor("external").WithLabel("ready-for-human-review").PullRequestEvent(github.PullRequestActionOpened),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fc := fakegithub.NewFakeClient()
+			resolver := tc.resolver
+			if resolver == nil {
+				resolver = nilResolver()
+			}
+			p := New(fc, resolver, tc.gates, tc.perms)
+			p.HandlePullRequestEvent(context.Background(), logrus.NewEntry(logrus.StandardLogger()), tc.event)
+
+			if diff := cmp.Diff(tc.expectAdded, fc.IssueLabelsAdded); diff != "" {
+				t.Errorf("labels added mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestHandleReviewEvent(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -42,138 +128,61 @@ func TestHandleReviewEvent(t *testing.T) {
 		{
 			name:     "ignore review from different user",
 			resolver: nilResolver(),
-			event: github.ReviewEvent{
-				Action: github.ReviewActionSubmitted,
-				Review: github.Review{
-					User:  github.User{Login: "someone-else"},
-					State: github.ReviewStateApproved,
-				},
-				PullRequest: github.PullRequest{Number: 1},
-				Repo:        github.Repo{Owner: github.User{Login: "org"}, Name: "repo"},
-			},
+			event:    testhelpers.NewPR("org", "repo", 1).ReviewEvent(github.ReviewActionSubmitted, "someone-else", github.ReviewStateApproved),
 		},
 		{
 			name:     "ignore edited action from coderabbit",
 			resolver: nilResolver(),
-			event: github.ReviewEvent{
-				Action: github.ReviewActionEdited,
-				Review: github.Review{
-					User:  github.User{Login: "coderabbitai[bot]"},
-					State: github.ReviewStateApproved,
-				},
-				PullRequest: github.PullRequest{Number: 1},
-				Repo:        github.Repo{Owner: github.User{Login: "org"}, Name: "repo"},
-			},
+			event:    testhelpers.NewPR("org", "repo", 1).ReviewEvent(github.ReviewActionEdited, "coderabbitai[bot]", github.ReviewStateApproved),
 		},
 		{
 			name:     "ignore dismissed action from coderabbit",
 			resolver: nilResolver(),
-			event: github.ReviewEvent{
-				Action: github.ReviewActionDismissed,
-				Review: github.Review{
-					User: github.User{Login: "coderabbitai[bot]"},
-				},
-				PullRequest: github.PullRequest{Number: 1},
-				Repo:        github.Repo{Owner: github.User{Login: "org"}, Name: "repo"},
-			},
+			event:    testhelpers.NewPR("org", "repo", 1).ReviewEvent(github.ReviewActionDismissed, "coderabbitai[bot]", github.ReviewStateApproved),
 		},
 		{
 			name:     "ignore non-approved state",
 			resolver: nilResolver(),
-			event: github.ReviewEvent{
-				Action: github.ReviewActionSubmitted,
-				Review: github.Review{
-					User:  github.User{Login: "coderabbitai[bot]"},
-					State: github.ReviewStateChangesRequested,
-				},
-				PullRequest: github.PullRequest{Number: 42},
-				Repo:        github.Repo{Owner: github.User{Login: "org"}, Name: "repo"},
-			},
+			event:    testhelpers.NewPR("org", "repo", 42).ReviewEvent(github.ReviewActionSubmitted, "coderabbitai[bot]", github.ReviewStateChangesRequested),
 		},
 		{
-			name:     "add label on approval when absent (default config)",
-			resolver: nilResolver(),
-			event: github.ReviewEvent{
-				Action: github.ReviewActionSubmitted,
-				Review: github.Review{
-					User:  github.User{Login: "coderabbitai[bot]"},
-					State: github.ReviewStateApproved,
-				},
-				PullRequest: github.PullRequest{Number: 42},
-				Repo:        github.Repo{Owner: github.User{Login: "org"}, Name: "repo"},
-			},
+			name:        "add label on approval when absent (default config)",
+			resolver:    nilResolver(),
+			event:       testhelpers.NewPR("org", "repo", 42).ReviewEvent(github.ReviewActionSubmitted, "coderabbitai[bot]", github.ReviewStateApproved),
 			expectAdded: []string{"org/repo#42:ready-for-human-review"},
 		},
 		{
 			name:     "no-op on approval when label already present",
 			resolver: nilResolver(),
-			event: github.ReviewEvent{
-				Action: github.ReviewActionSubmitted,
-				Review: github.Review{
-					User:  github.User{Login: "coderabbitai[bot]"},
-					State: github.ReviewStateApproved,
-				},
-				PullRequest: github.PullRequest{
-					Number: 42,
-					Labels: []github.Label{{Name: "ready-for-human-review"}},
-				},
-				Repo: github.Repo{Owner: github.User{Login: "org"}, Name: "repo"},
-			},
+			event:    testhelpers.NewPR("org", "repo", 42).WithLabel("ready-for-human-review").ReviewEvent(github.ReviewActionSubmitted, "coderabbitai[bot]", github.ReviewStateApproved),
 		},
 		{
-			name:     "custom label from config",
-			resolver: resolverWithConfig(pluginName, `{"label":"custom-label"}`),
-			event: github.ReviewEvent{
-				Action: github.ReviewActionSubmitted,
-				Review: github.Review{
-					User:  github.User{Login: "coderabbitai[bot]"},
-					State: github.ReviewStateApproved,
-				},
-				PullRequest: github.PullRequest{Number: 10},
-				Repo:        github.Repo{Owner: github.User{Login: "org"}, Name: "repo"},
-			},
+			name:        "custom label from config",
+			resolver:    resolverWithConfig(pluginName, `{"label":"custom-label"}`),
+			event:       testhelpers.NewPR("org", "repo", 10).ReviewEvent(github.ReviewActionSubmitted, "coderabbitai[bot]", github.ReviewStateApproved),
 			expectAdded: []string{"org/repo#10:custom-label"},
 		},
 		{
-			name:     "custom bot_login from config",
-			resolver: resolverWithConfig(pluginName, `{"bot_login":"other-bot[bot]"}`),
-			event: github.ReviewEvent{
-				Action: github.ReviewActionSubmitted,
-				Review: github.Review{
-					User:  github.User{Login: "other-bot[bot]"},
-					State: github.ReviewStateApproved,
-				},
-				PullRequest: github.PullRequest{Number: 10},
-				Repo:        github.Repo{Owner: github.User{Login: "org"}, Name: "repo"},
-			},
+			name:        "custom bot_login from config",
+			resolver:    resolverWithConfig(pluginName, `{"bot_login":"other-bot[bot]"}`),
+			event:       testhelpers.NewPR("org", "repo", 10).ReviewEvent(github.ReviewActionSubmitted, "other-bot[bot]", github.ReviewStateApproved),
 			expectAdded: []string{"org/repo#10:ready-for-human-review"},
 		},
 		{
 			name:     "custom bot_login does not match default bot",
 			resolver: resolverWithConfig(pluginName, `{"bot_login":"other-bot[bot]"}`),
-			event: github.ReviewEvent{
-				Action: github.ReviewActionSubmitted,
-				Review: github.Review{
-					User:  github.User{Login: "coderabbitai[bot]"},
-					State: github.ReviewStateApproved,
-				},
-				PullRequest: github.PullRequest{Number: 10},
-				Repo:        github.Repo{Owner: github.User{Login: "org"}, Name: "repo"},
-			},
+			event:    testhelpers.NewPR("org", "repo", 10).ReviewEvent(github.ReviewActionSubmitted, "coderabbitai[bot]", github.ReviewStateApproved),
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			fc := &fakeClient{}
-			p := New(fc, tc.resolver)
+			fc := fakegithub.NewFakeClient()
+			p := New(fc, tc.resolver, gateDisabled(), denyAll())
 			p.HandleReviewEvent(context.Background(), logrus.NewEntry(logrus.StandardLogger()), tc.event)
 
-			if len(tc.expectAdded) == 0 && len(fc.labelsAdded) == 0 {
-				return
-			}
-			if fmt.Sprintf("%v", tc.expectAdded) != fmt.Sprintf("%v", fc.labelsAdded) {
-				t.Errorf("labels added: want %v, got %v", tc.expectAdded, fc.labelsAdded)
+			if diff := cmp.Diff(tc.expectAdded, fc.IssueLabelsAdded); diff != "" {
+				t.Errorf("labels added mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

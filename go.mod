@@ -4,6 +4,8 @@ go 1.25.8
 
 require (
 	github.com/fsnotify/fsnotify v1.8.0
+	github.com/google/go-cmp v0.7.0
+	github.com/openshift-eng/cyborg-data/go v0.0.0-20260504195424-a073366e1c6a
 	github.com/prometheus/client_golang v1.23.2
 	github.com/sirupsen/logrus v1.9.4
 	sigs.k8s.io/prow v0.0.0-20260421061351-d25a1786785e
@@ -18,7 +20,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.5.3 // indirect
 	cloud.google.com/go/monitoring v1.24.3 // indirect
-	cloud.google.com/go/storage v1.56.0 // indirect
+	cloud.google.com/go/storage v1.56.1 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.53.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.53.0 // indirect
@@ -80,7 +82,6 @@ require (
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/cel-go v0.28.0 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect

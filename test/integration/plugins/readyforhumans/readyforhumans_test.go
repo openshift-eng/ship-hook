@@ -10,6 +10,8 @@ import (
 	"sigs.k8s.io/prow/pkg/github"
 	"sigs.k8s.io/prow/pkg/github/fakegithub"
 
+	"github.com/openshift-eng/ship-hook/pkg/featuregate"
+	"github.com/openshift-eng/ship-hook/pkg/permissions"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/readyforhumans"
 	integration "github.com/openshift-eng/ship-hook/test/integration"
 )
@@ -18,7 +20,8 @@ func TestReadyForHumans_HandleReviewEvent(t *testing.T) {
 	ghc := fakegithub.NewFakeClient()
 	ghc.RepoLabelsExisting = []string{"ready-for-human-review"}
 
-	plugin := readyforhumans.New(ghc, nil)
+	gates := featuregate.New(func(string) (string, bool) { return "", false })
+	plugin := readyforhumans.New(ghc, nil, gates, permissions.NewStub(nil))
 	event := integration.LoadTestEvent[github.ReviewEvent](t, "review_submitted_approved.json")
 
 	plugin.HandleReviewEvent(context.Background(), logrus.NewEntry(logrus.StandardLogger()), event)

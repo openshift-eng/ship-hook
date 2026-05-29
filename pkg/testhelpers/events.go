@@ -2,27 +2,52 @@ package testhelpers
 
 import "sigs.k8s.io/prow/pkg/github"
 
-func NewPullRequestEvent(org, repo string, number int, action github.PullRequestEventAction) github.PullRequestEvent {
+// PRBuilder constructs a pull request and produces GitHub webhook events from it.
+type PRBuilder struct {
+	org    string
+	repo   string
+	number int
+	author string
+	labels []github.Label
+}
+
+func NewPR(org, repo string, number int) *PRBuilder {
+	return &PRBuilder{org: org, repo: repo, number: number}
+}
+
+func (p *PRBuilder) WithAuthor(login string) *PRBuilder {
+	p.author = login
+	return p
+}
+
+func (p *PRBuilder) WithLabel(name string) *PRBuilder {
+	p.labels = append(p.labels, github.Label{Name: name})
+	return p
+}
+
+func (p *PRBuilder) PullRequestEvent(action github.PullRequestEventAction) github.PullRequestEvent {
 	return github.PullRequestEvent{
 		Action: action,
-		Number: number,
+		Number: p.number,
 		PullRequest: github.PullRequest{
-			Number: number,
+			Number: p.number,
+			User:   github.User{Login: p.author},
+			Labels: p.labels,
 			Base: github.PullRequestBranch{
 				Repo: github.Repo{
-					Owner: github.User{Login: org},
-					Name:  repo,
+					Owner: github.User{Login: p.org},
+					Name:  p.repo,
 				},
 			},
 		},
 		Repo: github.Repo{
-			Owner: github.User{Login: org},
-			Name:  repo,
+			Owner: github.User{Login: p.org},
+			Name:  p.repo,
 		},
 	}
 }
 
-func NewReviewEvent(org, repo string, number int, action github.ReviewEventAction, reviewer string, state github.ReviewState) github.ReviewEvent {
+func (p *PRBuilder) ReviewEvent(action github.ReviewEventAction, reviewer string, state github.ReviewState) github.ReviewEvent {
 	return github.ReviewEvent{
 		Action: action,
 		Review: github.Review{
@@ -30,28 +55,29 @@ func NewReviewEvent(org, repo string, number int, action github.ReviewEventActio
 			State: state,
 		},
 		PullRequest: github.PullRequest{
-			Number: number,
+			Number: p.number,
+			Labels: p.labels,
 		},
 		Repo: github.Repo{
-			Owner: github.User{Login: org},
-			Name:  repo,
+			Owner: github.User{Login: p.org},
+			Name:  p.repo,
 		},
 	}
 }
 
-func NewIssueCommentEvent(org, repo string, number int, body string) github.IssueCommentEvent {
+func (p *PRBuilder) CommentEvent(body string) github.IssueCommentEvent {
 	return github.IssueCommentEvent{
 		Action: github.IssueCommentActionCreated,
 		Issue: github.Issue{
-			Number: number,
+			Number: p.number,
 		},
 		Comment: github.IssueComment{
 			Body: body,
-			User: github.User{Login: "test-user"},
+			User: github.User{Login: p.author},
 		},
 		Repo: github.Repo{
-			Owner: github.User{Login: org},
-			Name:  repo,
+			Owner: github.User{Login: p.org},
+			Name:  p.repo,
 		},
 	}
 }

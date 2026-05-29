@@ -84,7 +84,7 @@ func TestDispatcherHandlePullRequestEvent(t *testing.T) {
 	d.Register(p1)
 	d.Register(p2)
 
-	event := testhelpers.NewPullRequestEvent("org", "repo", 1, "opened")
+	event := testhelpers.NewPR("org", "repo", 1).PullRequestEvent(github.PullRequestActionOpened)
 	d.HandlePullRequestEvent(logrus.NewEntry(logrus.StandardLogger()), event)
 
 	waitForEvents(t, func() int {
@@ -111,7 +111,7 @@ func TestDispatcherHandleIssueCommentEvent(t *testing.T) {
 	p := &recordingPlugin{name: "recorder"}
 	d.Register(p)
 
-	event := testhelpers.NewIssueCommentEvent("org", "repo", 5, "/test")
+	event := testhelpers.NewPR("org", "repo", 5).CommentEvent("/test")
 	d.HandleIssueCommentEvent(logrus.NewEntry(logrus.StandardLogger()), event)
 
 	waitForEvents(t, func() int {
@@ -132,7 +132,7 @@ func TestDispatcherDisabledPlugin(t *testing.T) {
 	d.Register(enabled)
 	d.Register(disabled)
 
-	event := testhelpers.NewPullRequestEvent("org", "repo", 1, "opened")
+	event := testhelpers.NewPR("org", "repo", 1).PullRequestEvent(github.PullRequestActionOpened)
 	d.HandlePullRequestEvent(logrus.NewEntry(logrus.StandardLogger()), event)
 
 	waitForEvents(t, func() int {
@@ -157,7 +157,7 @@ func TestDispatcherReviewEventGating(t *testing.T) {
 	d.Register(enabled)
 	d.Register(disabled)
 
-	event := testhelpers.NewReviewEvent("org", "repo", 1, "submitted", "user", "APPROVED")
+	event := testhelpers.NewPR("org", "repo", 1).ReviewEvent(github.ReviewActionSubmitted, "user", github.ReviewStateApproved)
 	d.HandleReviewEvent(logrus.NewEntry(logrus.StandardLogger()), event)
 
 	waitForEvents(t, func() int {
@@ -181,7 +181,7 @@ func TestDispatcherShutdownWaitsForHandlers(t *testing.T) {
 	blocking := &blockingPlugin{name: "slow", started: started, unblock: make(chan struct{})}
 	d.Register(blocking)
 
-	event := testhelpers.NewPullRequestEvent("org", "repo", 1, "opened")
+	event := testhelpers.NewPR("org", "repo", 1).PullRequestEvent(github.PullRequestActionOpened)
 	d.HandlePullRequestEvent(logrus.NewEntry(logrus.StandardLogger()), event)
 
 	<-started
@@ -219,7 +219,7 @@ func TestDispatcherShutdownCancelsContext(t *testing.T) {
 	}
 	d.Register(p)
 
-	event := testhelpers.NewPullRequestEvent("org", "repo", 1, "opened")
+	event := testhelpers.NewPR("org", "repo", 1).PullRequestEvent(github.PullRequestActionOpened)
 	d.HandlePullRequestEvent(logrus.NewEntry(logrus.StandardLogger()), event)
 
 	d.cancel()
@@ -238,7 +238,7 @@ func TestDispatcherShutdownRespectsDeadline(t *testing.T) {
 	blocking := &blockingPlugin{name: "stuck", started: started, unblock: make(chan struct{})}
 	d.Register(blocking)
 
-	event := testhelpers.NewPullRequestEvent("org", "repo", 1, "opened")
+	event := testhelpers.NewPR("org", "repo", 1).PullRequestEvent(github.PullRequestActionOpened)
 	d.HandlePullRequestEvent(logrus.NewEntry(logrus.StandardLogger()), event)
 
 	<-started

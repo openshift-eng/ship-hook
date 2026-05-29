@@ -4,7 +4,7 @@ External Prow plugin that receives GitHub webhook events from Prow Hook and disp
 
 ## Build
 
-```
+```shell
 make build     # compile binary to _output/ship-hook
 make test      # run all unit tests (via gotestsum)
 make vet       # run go vet
@@ -25,7 +25,7 @@ make image     # build container image (requires build first)
 
 1. Create a new package under `pkg/subplugins/<name>/`
 2. Define a narrow `githubClient` interface for the GitHub API methods the plugin needs
-3. Accept the client and resolver via constructor: `func New(ghc githubClient, resolver *config.Resolver) *Plugin`
+3. Inject dependencies via constructor. Simple plugins typically start with `func New(ghc githubClient, resolver *config.Resolver) *Plugin`; add further parameters as the plugin requires (e.g. feature gates, permissions checker).
 4. Implement the `dispatch.SubPlugin` interface
 5. Define a `PluginConfig` struct and `defaultConfig()` if the plugin needs configuration
 6. Use `config.ResolvePluginConfig[T](resolver, name, defaultCfg, org, repo)` in handlers to get typed config
@@ -49,23 +49,29 @@ Three layers of testing are available:
 
 ### Unit Tests
 
-```
+```shell
 make test      # runs go test ./...
 ```
 
-All sub-plugin handlers must have unit tests. Use `fakegithub.NewFakeClient()` from `sigs.k8s.io/prow/pkg/github/fakegithub` and inject it via the plugin constructor. Assert mutations via FakeClient tracking fields (`IssueCommentsAdded`, `IssueLabelsAdded`, etc.). Use `pkg/testhelpers/` for event construction helpers.
+All sub-plugin handlers must have unit tests. Use `fakegithub.NewFakeClient()` from `sigs.k8s.io/prow/pkg/github/fakegithub` and inject it via the plugin constructor. Assert mutations via FakeClient tracking fields (`IssueCommentsAdded`, `IssueLabelsAdded`, etc.). Use `pkg/testhelpers/` for event construction: build a PR with `testhelpers.NewPR(org, repo, number)`, optionally chain `.WithAuthor(login)` and `.WithLabel(name)`, then produce an event with `.PullRequestEvent(action)`, `.ReviewEvent(action, reviewer, state)`, or `.CommentEvent(body)`.
 
 ### Integration Tests
 
-```
+```shell
 make integration-test   # runs tests with //go:build integration tag
 ```
 
-Located in `test/integration/plugins/<name>/`. Use realistic JSON webhook payloads from `test/integration/testdata/`. Load events with `integration.LoadTestEvent[T](t, filename)`. Integration tests are excluded from `make test`.
+Located in `test/integration/plugins/<name>/` and `test/integration/cyborg/`. Use realistic JSON webhook payloads from `test/integration/testdata/`. Load events with `integration.LoadTestEvent[T](t, filename)`. Integration tests are excluded from `make test`. Cyborg integration tests use `orgdatacore.FakeDataSource` with synthetic test data — no GCP credentials needed.
+
+For live GCS verification against the real cyborg data (requires `gcloud auth application-default login`):
+
+```shell
+go test -v -tags=gcs,integration,cyborg_live ./test/integration/cyborg/...
+```
 
 ### Interactive Dev Server
 
-```
+```shell
 make dev-server    # start ship-hook with fakegithub (port 8888 webhook, 8889 state)
 make dev-webhook EVENT=pull_request PAYLOAD=test/integration/testdata/pull_request_opened.json
 make dev-state     # inspect fakegithub mutations
