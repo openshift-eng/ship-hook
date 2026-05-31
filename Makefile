@@ -7,6 +7,9 @@ IMAGE_REPO ?= quay.io/petr-muller/ship-hook
 build:
 	go build -tags gcs -o $(OUTPUT_DIR)/$(BINARY) ./cmd/ship-hook/
 
+build-explorer:
+	go build -o $(OUTPUT_DIR)/ship-hook-explorer ./cmd/ship-hook-explorer/
+
 test:
 	gotestsum -- -tags=gcs ./...
 
