@@ -7,10 +7,10 @@ import (
 	"github.com/sirupsen/logrus"
 	"sigs.k8s.io/prow/pkg/github"
 
+	"github.com/openshift-eng/ship-hook/pkg/authz"
 	"github.com/openshift-eng/ship-hook/pkg/config"
 	"github.com/openshift-eng/ship-hook/pkg/dispatch"
 	"github.com/openshift-eng/ship-hook/pkg/featuregate"
-	"github.com/openshift-eng/ship-hook/pkg/permissions"
 )
 
 const pluginName = "ready-for-humans"
@@ -35,11 +35,11 @@ type Plugin struct {
 	ghc      githubClient
 	resolver *config.Resolver
 	gates    *featuregate.Gates
-	perms    permissions.Checker
+	authz    authz.Authorizer
 }
 
-func New(ghc githubClient, resolver *config.Resolver, gates *featuregate.Gates, perms permissions.Checker) *Plugin {
-	return &Plugin{ghc: ghc, resolver: resolver, gates: gates, perms: perms}
+func New(ghc githubClient, resolver *config.Resolver, gates *featuregate.Gates, az authz.Authorizer) *Plugin {
+	return &Plugin{ghc: ghc, resolver: resolver, gates: gates, authz: az}
 }
 
 func (p *Plugin) Name() string { return pluginName }
@@ -62,7 +62,7 @@ func (p *Plugin) HandlePullRequestEvent(_ context.Context, _ *logrus.Entry, pre 
 	}
 
 	author := pre.PullRequest.User.Login
-	if p.perms.IsAllowed(author, "access", "coderabbit") {
+	if p.authz.IsAllowed(author, "access-coderabbit", authz.Repo(org, repo)) {
 		return dispatch.NoChange("author has coderabbit access")
 	}
 

@@ -12,10 +12,10 @@ import (
 	"sigs.k8s.io/prow/pkg/githubeventserver"
 	"sigs.k8s.io/prow/pkg/logrusutil"
 
+	"github.com/openshift-eng/ship-hook/pkg/authz"
 	"github.com/openshift-eng/ship-hook/pkg/config"
 	"github.com/openshift-eng/ship-hook/pkg/dispatch"
 	"github.com/openshift-eng/ship-hook/pkg/featuregate"
-	"github.com/openshift-eng/ship-hook/pkg/permissions"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/example"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/readyforhumans"
 )
@@ -35,11 +35,13 @@ func main() {
 
 	var statePort int
 	var configPath string
+	var authzAllowAll bool
 	esOpts := githubeventserver.Options{}
 
 	fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	fs.IntVar(&statePort, "state-port", 8889, "State API port")
 	fs.StringVar(&configPath, "config-path", "", "Path to ship-hook config file (default: all plugins enabled)")
+	fs.BoolVar(&authzAllowAll, "authz-allow-all", true, "Allow all authorization checks (no cyborg data needed)")
 	esOpts.Bind(fs)
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		logger.WithError(err).Fatal("Failed to parse flags")
@@ -68,7 +70,12 @@ func main() {
 	gates := featuregate.New(os.LookupEnv, featuregate.AllGates...)
 	gates.LogStates(logger)
 
-	perms := permissions.NewStub(nil)
+	var authorizer authz.Authorizer
+	if authzAllowAll {
+		authorizer = authz.NewAllowAllAuthorizer()
+	} else {
+		authorizer = authz.NewAuthorizer(authz.NewPolicy(), nil)
+	}
 
 	ghc := fakegithub.NewFakeClient()
 
@@ -77,7 +84,7 @@ func main() {
 
 	dispatcher := dispatch.NewDispatcher(logger, resolver)
 	dispatcher.Register(example.New(ghc))
-	dispatcher.Register(readyforhumans.New(ghc, resolver, gates, perms))
+	dispatcher.Register(readyforhumans.New(ghc, resolver, gates, authorizer))
 
 	eventServer.RegisterHandlePullRequestEvent(dispatcher.HandlePullRequestEvent)
 	eventServer.RegisterHandleIssueCommentEvent(dispatcher.HandleIssueCommentEvent)

@@ -10,9 +10,9 @@ import (
 	"sigs.k8s.io/prow/pkg/github"
 	"sigs.k8s.io/prow/pkg/github/fakegithub"
 
+	"github.com/openshift-eng/ship-hook/pkg/authz"
 	"github.com/openshift-eng/ship-hook/pkg/config"
 	"github.com/openshift-eng/ship-hook/pkg/featuregate"
-	"github.com/openshift-eng/ship-hook/pkg/permissions"
 	"github.com/openshift-eng/ship-hook/pkg/testhelpers"
 )
 
@@ -43,19 +43,30 @@ func gateEnabled() *featuregate.Gates {
 	)
 }
 
-func allowAll() permissions.Checker {
-	return permissions.NewStub(func(string) bool { return true })
+type fixedAuthorizer bool
+
+func (f fixedAuthorizer) IsAllowed(string, string, authz.Resource) bool { return bool(f) }
+
+func allowAll() authz.Authorizer { return fixedAuthorizer(true) }
+func denyAll() authz.Authorizer  { return fixedAuthorizer(false) }
+
+type recordingAuthorizer struct {
+	allowed  bool
+	lastUser string
+	lastOp   string
+	lastRes  authz.Resource
 }
 
-func denyAll() permissions.Checker {
-	return permissions.NewStub(nil)
+func (r *recordingAuthorizer) IsAllowed(user, op string, res authz.Resource) bool {
+	r.lastUser, r.lastOp, r.lastRes = user, op, res
+	return r.allowed
 }
 
 func TestHandlePullRequestEvent(t *testing.T) {
 	testCases := []struct {
 		name        string
 		gates       *featuregate.Gates
-		perms       permissions.Checker
+		authz       authz.Authorizer
 		resolver    *config.Resolver
 		event       github.PullRequestEvent
 		expectAdded []string
@@ -63,32 +74,32 @@ func TestHandlePullRequestEvent(t *testing.T) {
 		{
 			name:  "gate disabled, no label",
 			gates: gateDisabled(),
-			perms: denyAll(),
+			authz: denyAll(),
 			event: testhelpers.NewPR("org", "repo", 1).WithAuthor("external").PullRequestEvent(github.PullRequestActionOpened),
 		},
 		{
 			name:  "gate enabled, action not opened",
 			gates: gateEnabled(),
-			perms: denyAll(),
+			authz: denyAll(),
 			event: testhelpers.NewPR("org", "repo", 1).WithAuthor("external").PullRequestEvent(github.PullRequestActionSynchronize),
 		},
 		{
 			name:  "gate enabled, author has coderabbit access",
 			gates: gateEnabled(),
-			perms: allowAll(),
+			authz: allowAll(),
 			event: testhelpers.NewPR("org", "repo", 42).WithAuthor("rh-employee").PullRequestEvent(github.PullRequestActionOpened),
 		},
 		{
 			name:        "gate enabled, author without access, label added",
 			gates:       gateEnabled(),
-			perms:       denyAll(),
+			authz:       denyAll(),
 			event:       testhelpers.NewPR("org", "repo", 42).WithAuthor("external-contributor").PullRequestEvent(github.PullRequestActionOpened),
 			expectAdded: []string{"org/repo#42:ready-for-human-review"},
 		},
 		{
 			name:        "gate enabled, author without access, custom label from config",
 			gates:       gateEnabled(),
-			perms:       denyAll(),
+			authz:       denyAll(),
 			resolver:    resolverWithConfig(pluginName, `{"label":"custom-label"}`),
 			event:       testhelpers.NewPR("org", "repo", 10).WithAuthor("external").PullRequestEvent(github.PullRequestActionOpened),
 			expectAdded: []string{"org/repo#10:custom-label"},
@@ -96,7 +107,7 @@ func TestHandlePullRequestEvent(t *testing.T) {
 		{
 			name:  "gate enabled, label already present",
 			gates: gateEnabled(),
-			perms: denyAll(),
+			authz: denyAll(),
 			event: testhelpers.NewPR("org", "repo", 42).WithAuthor("external").WithLabel("ready-for-human-review").PullRequestEvent(github.PullRequestActionOpened),
 		},
 	}
@@ -108,13 +119,33 @@ func TestHandlePullRequestEvent(t *testing.T) {
 			if resolver == nil {
 				resolver = nilResolver()
 			}
-			p := New(fc, resolver, tc.gates, tc.perms)
+			p := New(fc, resolver, tc.gates, tc.authz)
 			p.HandlePullRequestEvent(context.Background(), logrus.NewEntry(logrus.StandardLogger()), tc.event)
 
 			if diff := cmp.Diff(tc.expectAdded, fc.IssueLabelsAdded); diff != "" {
 				t.Errorf("labels added mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestPullRequestEvent_AuthzContract(t *testing.T) {
+	fc := fakegithub.NewFakeClient()
+	rec := &recordingAuthorizer{allowed: true}
+	event := testhelpers.NewPR("test-org", "test-repo", 7).WithAuthor("some-author").PullRequestEvent(github.PullRequestActionOpened)
+	p := New(fc, nilResolver(), gateEnabled(), rec)
+
+	p.HandlePullRequestEvent(context.Background(), logrus.NewEntry(logrus.StandardLogger()), event)
+
+	if rec.lastUser != "some-author" {
+		t.Errorf("expected user %q, got %q", "some-author", rec.lastUser)
+	}
+	if rec.lastOp != "access-coderabbit" {
+		t.Errorf("expected operation %q, got %q", "access-coderabbit", rec.lastOp)
+	}
+	expectedRes := authz.Repo("test-org", "test-repo")
+	if rec.lastRes != expectedRes {
+		t.Errorf("expected resource %+v, got %+v", expectedRes, rec.lastRes)
 	}
 }
 
