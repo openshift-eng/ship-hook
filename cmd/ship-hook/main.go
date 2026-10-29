@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -23,6 +24,7 @@ import (
 	"github.com/openshift-eng/ship-hook/pkg/permissions"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/example"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/readyforhumans"
+	"github.com/openshift-eng/ship-hook/pkg/subplugins/twohumanapprovals"
 )
 
 type options struct {
@@ -76,6 +78,16 @@ func (o *options) validate() error {
 	return nil
 }
 
+func isKnownHumanRedHatter(knownRedHatter func(string) bool) func(string) bool {
+	isHuman := func(login string) bool {
+		return login != "" && !strings.EqualFold(login, "redhat-chai-bot") &&
+			!strings.HasSuffix(strings.ToLower(login), "[bot]")
+	}
+	return func(login string) bool {
+		return knownRedHatter != nil && isHuman(login) && knownRedHatter(login)
+	}
+}
+
 func main() {
 	logrusutil.ComponentInit()
 	logger := logrus.WithField("component", "ship-hook")
@@ -123,10 +135,12 @@ func main() {
 			return cyborgService.GetEmployeeByGitHubID(login) != nil
 		}
 	} else {
-		logger.Info("Cyborg access disabled")
+		logger.Info("Cyborg access disabled; directory-backed approval checks cannot pass")
 	}
+
 	perms := permissions.NewStub(map[permissions.Operation]func(string) bool{
 		{Action: "access", Resource: "coderabbit"}: knownRedHatter,
+		{Action: "approve", Resource: "pr"}:        isKnownHumanRedHatter(knownRedHatter),
 	})
 
 	hmacTokenGenerator := func() []byte {
@@ -152,6 +166,7 @@ func main() {
 	dispatcher := dispatch.NewDispatcher(logger, resolver)
 	dispatcher.Register(example.New(ghc))
 	dispatcher.Register(readyforhumans.New(ghc, resolver, gates, perms))
+	dispatcher.Register(twohumanapprovals.New(ghc, perms))
 
 	eventServer.RegisterHandlePullRequestEvent(dispatcher.HandlePullRequestEvent)
 	eventServer.RegisterHandleIssueCommentEvent(dispatcher.HandleIssueCommentEvent)

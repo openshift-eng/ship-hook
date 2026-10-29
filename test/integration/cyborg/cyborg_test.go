@@ -52,10 +52,12 @@ func TestCyborgPermissionsIntegration(t *testing.T) {
 		}
 	})
 
+	knownRedHatter := func(login string) bool {
+		return service.GetEmployeeByGitHubID(login) != nil
+	}
 	perms := permissions.NewStub(map[permissions.Operation]func(string) bool{
-		{Action: "access", Resource: "coderabbit"}: func(login string) bool {
-			return service.GetEmployeeByGitHubID(login) != nil
-		},
+		{Action: "access", Resource: "coderabbit"}: knownRedHatter,
+		{Action: "approve", Resource: "pr"}:        knownRedHatter,
 	})
 
 	if !perms.IsAllowed("ghuser1", "access", "coderabbit") {
@@ -63,6 +65,12 @@ func TestCyborgPermissionsIntegration(t *testing.T) {
 	}
 	if perms.IsAllowed("outsider", "access", "coderabbit") {
 		t.Error("Expected outsider to not have coderabbit access")
+	}
+	if !perms.IsAllowed("ghuser1", "approve", "pr") {
+		t.Error("Expected ghuser1 (known employee) to be allowed to approve PRs")
+	}
+	if perms.IsAllowed("outsider", "approve", "pr") {
+		t.Error("Expected outsider to not be allowed to approve PRs")
 	}
 }
 

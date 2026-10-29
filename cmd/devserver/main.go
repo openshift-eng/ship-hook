@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/sirupsen/logrus"
-	"sigs.k8s.io/prow/pkg/github/fakegithub"
+	"sigs.k8s.io/prow/pkg/github"
 	"sigs.k8s.io/prow/pkg/githubeventserver"
 	"sigs.k8s.io/prow/pkg/logrusutil"
 
@@ -18,15 +19,18 @@ import (
 	"github.com/openshift-eng/ship-hook/pkg/permissions"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/example"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/readyforhumans"
+	"github.com/openshift-eng/ship-hook/pkg/subplugins/twohumanapprovals"
+	"github.com/openshift-eng/ship-hook/pkg/testhelpers"
 )
 
 const devHMAC = "devhmac"
 
 type stateResponse struct {
-	IssueCommentsAdded []string `json:"issue_comments_added"`
-	IssueLabelsAdded   []string `json:"issue_labels_added"`
-	IssueLabelsRemoved []string `json:"issue_labels_removed"`
-	AssigneesAdded     []string `json:"assignees_added"`
+	IssueCommentsAdded []string          `json:"issue_comments_added"`
+	IssueLabelsAdded   []string          `json:"issue_labels_added"`
+	IssueLabelsRemoved []string          `json:"issue_labels_removed"`
+	AssigneesAdded     []string          `json:"assignees_added"`
+	CheckRuns          []github.CheckRun `json:"check_runs"`
 }
 
 func main() {
@@ -61,6 +65,7 @@ func main() {
 			Plugins: []config.PluginConfig{
 				{Name: "example"},
 				{Name: "ready-for-humans"},
+				{Name: "two-human-approvals"},
 			},
 		})
 	}
@@ -68,9 +73,13 @@ func main() {
 	gates := featuregate.New(os.LookupEnv, featuregate.AllGates...)
 	gates.LogStates(logger)
 
-	perms := permissions.NewStub(nil, permissions.Operation{Action: "access", Resource: "coderabbit"})
+	perms := permissions.NewStub(map[permissions.Operation]func(string) bool{
+		{Action: "approve", Resource: "pr"}: func(login string) bool {
+			return strings.EqualFold(login, "alice") || strings.EqualFold(login, "bob")
+		},
+	})
 
-	ghc := fakegithub.NewFakeClient()
+	ghc := testhelpers.NewCheckRunClient()
 
 	hmacTokenGenerator := func() []byte { return []byte(devHMAC) }
 	eventServer := githubeventserver.New(esOpts, hmacTokenGenerator, logger)
@@ -78,10 +87,25 @@ func main() {
 	dispatcher := dispatch.NewDispatcher(logger, resolver)
 	dispatcher.Register(example.New(ghc))
 	dispatcher.Register(readyforhumans.New(ghc, resolver, gates, perms))
+	dispatcher.Register(twohumanapprovals.New(ghc, perms))
 
-	eventServer.RegisterHandlePullRequestEvent(dispatcher.HandlePullRequestEvent)
-	eventServer.RegisterHandleIssueCommentEvent(dispatcher.HandleIssueCommentEvent)
-	eventServer.RegisterReviewEventHandler(dispatcher.HandleReviewEvent)
+	eventServer.RegisterHandlePullRequestEvent(func(log *logrus.Entry, event github.PullRequestEvent) {
+		ghc.RecordPullRequest(event.PullRequest)
+		dispatcher.HandlePullRequestEvent(log, event)
+	})
+	eventServer.RegisterHandleIssueCommentEvent(func(log *logrus.Entry, event github.IssueCommentEvent) {
+		if event.Action == github.IssueCommentActionCreated {
+			ghc.RecordIssueComment(event.Issue.Number, event.Comment)
+		}
+		dispatcher.HandleIssueCommentEvent(log, event)
+	})
+	eventServer.RegisterReviewEventHandler(func(log *logrus.Entry, event github.ReviewEvent) {
+		ghc.RecordPullRequest(event.PullRequest)
+		if event.Action == github.ReviewActionSubmitted {
+			ghc.RecordReview(event.PullRequest.Number, event.Review)
+		}
+		dispatcher.HandleReviewEvent(log, event)
+	})
 
 	stateMux := http.NewServeMux()
 	stateMux.HandleFunc("GET /state", func(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +114,7 @@ func main() {
 			IssueLabelsAdded:   ghc.IssueLabelsAdded,
 			IssueLabelsRemoved: ghc.IssueLabelsRemoved,
 			AssigneesAdded:     ghc.AssigneesAdded,
+			CheckRuns:          ghc.CheckRuns(),
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(state); err != nil {
@@ -101,6 +126,7 @@ func main() {
 		ghc.IssueLabelsAdded = nil
 		ghc.IssueLabelsRemoved = nil
 		ghc.AssigneesAdded = nil
+		ghc.ResetCheckRuns()
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "state reset") //nolint:errcheck
 	})

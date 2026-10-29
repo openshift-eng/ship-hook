@@ -1,0 +1,32 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 1,
+    "state": "open",
+    "title": "Bot-authored PR awaiting human review",
+    "user": {
+      "login": "redhat-chai-bot"
+    },
+    "pull_request": {
+      "html_url": "https://github.com/test-org/test-repo/pull/1"
+    },
+    "body": "@alice requested from Slack"
+  },
+  "comment": {
+    "id": 100,
+    "body": "/approve",
+    "user": {
+      "login": "bob"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "test-org"
+    },
+    "name": "test-repo",
+    "full_name": "test-org/test-repo"
+  },
+  "sender": {
+    "login": "bob"
+  }
+}
