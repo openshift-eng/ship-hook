@@ -24,6 +24,7 @@ import (
 	"github.com/openshift-eng/ship-hook/pkg/permissions"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/example"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/readyforhumans"
+	"github.com/openshift-eng/ship-hook/pkg/subplugins/twohumanapprovals"
 )
 
 type options struct {
@@ -95,7 +96,7 @@ func main() {
 	gates := featuregate.New(os.LookupEnv, featuregate.AllGates...)
 	gates.LogStates(logger)
 
-	var coderabbitAccessFn func(string) bool
+	var employeeID func(string) string
 	ctx, cyborgCancel := context.WithCancel(context.Background())
 	defer cyborgCancel()
 	if o.cyborgCredentialsFile != "" {
@@ -125,11 +126,14 @@ func main() {
 			}
 		}()
 
-		coderabbitAccessFn = func(login string) bool {
-			return cyborgService.GetEmployeeByGitHubID(login) != nil
+		employeeID = func(login string) string {
+			if employee := cyborgService.GetEmployeeByGitHubID(login); employee != nil {
+				return employee.UID
+			}
+			return ""
 		}
 	}
-	perms := permissions.NewStub(coderabbitAccessFn)
+	perms := permissions.NewStub(employeeID)
 
 	hmacTokenGenerator := func() []byte {
 		data, err := os.ReadFile(o.hmacSecretFile)
@@ -154,6 +158,7 @@ func main() {
 	dispatcher := dispatch.NewDispatcher(logger, resolver)
 	dispatcher.Register(example.New(ghc))
 	dispatcher.Register(readyforhumans.New(ghc, resolver, gates, perms))
+	dispatcher.Register(twohumanapprovals.New(ghc, perms))
 
 	eventServer.RegisterHandlePullRequestEvent(dispatcher.HandlePullRequestEvent)
 	eventServer.RegisterHandleIssueCommentEvent(dispatcher.HandleIssueCommentEvent)

@@ -7,6 +7,7 @@ SHIP Hook is an external [Prow](https://docs.prow.k8s.io/) plugin that receives 
 | Plugin | Description |
 |--------|-------------|
 | `ready-for-humans` | Adds a label to PRs when [CodeRabbit](https://coderabbit.ai/) submits an approving review, signaling the PR is ready for human review |
+| `two-human-approvals` | Provides a `needs-human-review` reminder to help reviewers follow the two-human review process for PRs opened by `redhat-chai-bot` |
 | `example` | Reference implementation that logs received events |
 
 ## Configuration
@@ -36,6 +37,54 @@ orgs:
 Supplemental config files can be placed in a separate directory and merged into the main config, allowing org/repo owners to manage their own configuration shards.
 
 See `specs/004-configuration.md` for full details.
+
+`two-human-approvals` provides guardrails that help people follow the review
+process for bot-authored PRs. Its `needs-human-review` label is a reminder that
+more human input is needed. The plugin removes that reminder when it finds
+qualifying participation from two distinct Red Hat humans.
+
+This is a workflow aid, not a security control or a guarantee of review quality.
+It trusts webhook snapshots and requester attribution in PR descriptions, and
+only manages a label; it does not block merges or prevent bypassing the process.
+Reviewers and repository maintainers remain responsible for following the
+intended review process.
+
+Enable `two-human-approvals` by adding `- name: two-human-approvals` to the
+appropriate `plugins` list. Its bot login (`redhat-chai-bot`), label
+(`needs-human-review`), and description attribution pattern (a standalone
+`@LOGIN requested from Slack` line) are currently hardcoded. The first matching
+attribution counts as one human if Cyborg recognizes them as a Red Hat employee.
+
+Approval eligibility is supplied through the permissions checker using action
+`approve` and resource `pr`. The current permissions stub implements that policy
+with its `isCyborgKnownRedHatter` built-in predicate, shared with CodeRabbit access.
+The checker also compares identities, counting multiple accounts belonging to
+one employee as a single participant. The plugin finds approvals
+and manages the label independently of the eligibility policy.
+
+The plugin uses webhook labels and descriptions directly, avoiding a PR lookup.
+Approval events on unlabeled PRs require no GitHub calls. A qualifying description
+attribution requires only label removal; otherwise it searches comments, then
+reviews, then dismissal history only as needed, stopping when it finds a second
+approver.
+
+The plugin handles newly created PR comments and submitted reviews. An approving
+review, or a command line containing `/ok-to-test`, `/lgtm`, `/approve`, or
+`/verify`, counts as approval. Commands with a `cancel` argument are excluded,
+except `/verify`, which counts with any arguments. The plugin counts events from
+Cyborg-confirmed employees and looks for attribution or earlier comments/reviews
+from a different employee. Multiple GitHub accounts resolving to the same Cyborg
+employee count once. Bot accounts and GitHub apps are excluded from the human
+count. Review bodies are checked even for non-approving reviews; pending reviews
+do not count.
+
+Earlier approvals are not revoked by later cancellations, changes requested,
+review dismissals, or new commits. Dismissal history recovers the original state
+of dismissed reviews. Deleted comments and removed command text cannot be
+recovered from the current GitHub history. Once removed, the label is not restored.
+Use `--cyborg.credentials-file` to provide the same Cyborg data used by
+`ready-for-humans`; without it, the plugin adds the label but cannot remove it.
+The dev server likewise has no Cyborg lookup and cannot count approvals.
 
 ## Building
 

@@ -44,7 +44,7 @@ func gateEnabled() *featuregate.Gates {
 }
 
 func allowAll() permissions.Checker {
-	return permissions.NewStub(func(string) bool { return true })
+	return permissions.NewStub(func(string) string { return "employee" })
 }
 
 func denyAll() permissions.Checker {
