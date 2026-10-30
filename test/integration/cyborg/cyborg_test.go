@@ -43,8 +43,11 @@ func TestCyborgPermissionsIntegration(t *testing.T) {
 		t.Fatalf("Failed to load cyborg data: %v", err)
 	}
 
-	perms := permissions.NewStub(func(login string) bool {
-		return service.GetEmployeeByGitHubID(login) != nil
+	perms := permissions.NewStub(func(login string) string {
+		if employee := service.GetEmployeeByGitHubID(login); employee != nil {
+			return employee.UID
+		}
+		return ""
 	})
 
 	if !perms.IsAllowed("ghuser1", "access", "coderabbit") {
@@ -52,5 +55,11 @@ func TestCyborgPermissionsIntegration(t *testing.T) {
 	}
 	if perms.IsAllowed("outsider", "access", "coderabbit") {
 		t.Error("Expected outsider to not have coderabbit access")
+	}
+	if !perms.IsAllowed("ghuser1", "approve", "pr") {
+		t.Error("Expected ghuser1 (known employee) to be allowed to approve PRs")
+	}
+	if perms.IsAllowed("outsider", "approve", "pr") {
+		t.Error("Expected outsider to not be allowed to approve PRs")
 	}
 }
