@@ -6,23 +6,28 @@ type Checker interface {
 	IsAllowed(user, action, resource string) bool
 }
 
-// StubChecker is a minimal stub that only handles action="access", resource="coderabbit".
-// All other action/resource combinations are denied. Replace with a policy-engine-backed
-// implementation when richer authorization logic is needed.
+// Operation identifies an action on a resource.
+type Operation struct {
+	Action   string
+	Resource string
+}
+
+// StubChecker grants operations using their configured user predicates.
+// Missing operations and nil predicates deny access.
 type StubChecker struct {
-	coderabbitAccessFn func(string) bool
+	allowed map[Operation]func(string) bool
 }
 
-func NewStub(coderabbitAccessFn func(string) bool) *StubChecker {
-	return &StubChecker{coderabbitAccessFn: coderabbitAccessFn}
-}
-
-func (s *StubChecker) IsAllowed(user, action, resource string) bool {
-	if action == "access" && resource == "coderabbit" {
-		if s.coderabbitAccessFn == nil {
-			return false
-		}
-		return s.coderabbitAccessFn(user)
+// NewStub configures an independent predicate for each operation.
+func NewStub(operations map[Operation]func(string) bool) *StubChecker {
+	allowed := make(map[Operation]func(string) bool, len(operations))
+	for operation, predicate := range operations {
+		allowed[operation] = predicate
 	}
-	return false
+	return &StubChecker{allowed: allowed}
+}
+
+func (checker *StubChecker) IsAllowed(user, action, resource string) bool {
+	predicate := checker.allowed[Operation{Action: action, Resource: resource}]
+	return predicate != nil && predicate(user)
 }

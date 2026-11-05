@@ -16,13 +16,20 @@ A permission request identifies a GitHub account and an operation, expressed as
 an action on a resource. The result grants or denies that request. The consuming
 plugin owns what happens after the decision and how it distinguishes accounts.
 
-### Initial Policy
+### Independent Policies
 
-The initial checker supports CodeRabbit access through an externally supplied
-eligibility check. It denies requests when no check is supplied and denies
-unsupported operations. Policy inputs are supplied by the application.
+Each operation has its own externally supplied eligibility check. Policies may
+reuse a membership check or combine several conditions, without affecting the
+policy for another operation. An unconfigured operation or absent check denies
+access; it must not fall back to another operation's policy.
+
+The application composes policy from facts such as directory membership.
+The checker delegates eligibility to that policy and passes account identifiers
+unchanged. Account classification and normalization belong to the providers of
+those facts. Policies for specific features are described in their feature specs.
 
 ## Verification
 
-Verify eligible and ineligible accounts, absent eligibility checks, and
-unsupported operations with `make verify integration-test`.
+Verify that operations can independently allow or deny the same account, that
+missing policies deny access, and that identifiers reach the selected policy
+unchanged. Run these checks with `make verify integration-test`.

@@ -97,7 +97,7 @@ func main() {
 	gates := featuregate.New(os.LookupEnv, featuregate.AllGates...)
 	gates.LogStates(logger)
 
-	var coderabbitAccessFn func(string) bool
+	var knownRedHatter func(string) bool
 	ctx, cyborgCancel := context.WithCancel(context.Background())
 	defer cyborgCancel()
 	cyborgService, err := o.cyborgOptions.NewService(ctx)
@@ -119,13 +119,15 @@ func main() {
 			}
 		}()
 
-		coderabbitAccessFn = func(login string) bool {
+		knownRedHatter = func(login string) bool {
 			return cyborgService.GetEmployeeByGitHubID(login) != nil
 		}
 	} else {
 		logger.Info("Cyborg access disabled")
 	}
-	perms := permissions.NewStub(coderabbitAccessFn)
+	perms := permissions.NewStub(map[permissions.Operation]func(string) bool{
+		{Action: "access", Resource: "coderabbit"}: knownRedHatter,
+	})
 
 	hmacTokenGenerator := func() []byte {
 		data, err := os.ReadFile(o.hmacSecretFile)

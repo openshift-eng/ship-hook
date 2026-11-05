@@ -68,7 +68,7 @@ func main() {
 	gates := featuregate.New(os.LookupEnv, featuregate.AllGates...)
 	gates.LogStates(logger)
 
-	perms := permissions.NewStub(nil)
+	perms := permissions.NewStub(nil, permissions.Operation{Action: "access", Resource: "coderabbit"})
 
 	ghc := fakegithub.NewFakeClient()
 

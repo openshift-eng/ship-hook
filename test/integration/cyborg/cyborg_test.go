@@ -52,8 +52,10 @@ func TestCyborgPermissionsIntegration(t *testing.T) {
 		}
 	})
 
-	perms := permissions.NewStub(func(login string) bool {
-		return service.GetEmployeeByGitHubID(login) != nil
+	perms := permissions.NewStub(map[permissions.Operation]func(string) bool{
+		{Action: "access", Resource: "coderabbit"}: func(login string) bool {
+			return service.GetEmployeeByGitHubID(login) != nil
+		},
 	})
 
 	if !perms.IsAllowed("ghuser1", "access", "coderabbit") {
