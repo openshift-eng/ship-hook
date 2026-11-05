@@ -8,6 +8,7 @@ import (
 
 	orgdatacore "github.com/openshift-eng/cyborg-data/go"
 
+	"github.com/openshift-eng/ship-hook/pkg/cyborg"
 	"github.com/openshift-eng/ship-hook/pkg/permissions"
 )
 
@@ -15,13 +16,15 @@ func TestCyborgEmployeeLookup(t *testing.T) {
 	ctx := context.Background()
 
 	source := orgdatacore.NewFakeDataSource(orgdatacore.CreateTestDataJSON())
-	service := orgdatacore.NewService()
-	if err := service.LoadFromDataSource(ctx, source); err != nil {
+	service, err := cyborg.NewService(ctx, source)
+	if err != nil {
 		t.Fatalf("Failed to load cyborg data: %v", err)
 	}
-
-	version := service.GetVersion()
-	t.Logf("Loaded cyborg data: %d employees, %d orgs", version.EmployeeCount, version.OrgCount)
+	t.Cleanup(func() {
+		if err := service.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 
 	if emp := service.GetEmployeeByGitHubID("ghuser1"); emp == nil {
 		t.Fatal("Expected employee for ghuser1, got nil")
@@ -38,10 +41,15 @@ func TestCyborgPermissionsIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	source := orgdatacore.NewFakeDataSource(orgdatacore.CreateTestDataJSON())
-	service := orgdatacore.NewService()
-	if err := service.LoadFromDataSource(ctx, source); err != nil {
+	service, err := cyborg.NewService(ctx, source)
+	if err != nil {
 		t.Fatalf("Failed to load cyborg data: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := service.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 
 	perms := permissions.NewStub(func(login string) bool {
 		return service.GetEmployeeByGitHubID(login) != nil

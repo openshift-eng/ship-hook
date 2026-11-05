@@ -24,12 +24,24 @@ implicitly using another identity. Initialization is independent of individual
 plugin feature gates. When access is enabled, failures to load credentials or
 initial directory data prevent startup.
 
-### Refresh
+The shared secret agent loads and validates credentials before use and
+registers them for log censoring. Credential replacement requires a restart:
+reloading the secret does not replace credentials in an existing remote client.
 
-Directory data is loaded from a remote source and refreshed automatically.
-Consumers query the loaded directory without managing the source themselves.
+### Ownership and Lifecycle
+
+The integration owns directory construction, source access, and refresh.
+The application supplies configuration, starts refresh, and controls shutdown.
+Query consumers do not need to manage refresh or remote clients.
+
+Initial loading and ongoing refresh have separate cancellation lifetimes.
+Cancellation is supplied by the caller for each operation rather than retained
+as service state. Shutdown cancels refresh before closing the directory source.
+Taking ownership of a source includes releasing it if initial loading fails.
 
 ## Verification
 
-Verify known and unknown employee lookups using synthetic directory data. A live
-source check is optional and requires credentials.
+Verify disabled access, invalid credentials, initial-load failure, cancellation,
+resource cleanup, and employee lookup using synthetic directory data. A live
+source check is optional and requires credentials. Run the automated checks with
+`make verify integration-test build`.
