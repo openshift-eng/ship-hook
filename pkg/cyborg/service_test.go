@@ -16,7 +16,7 @@ func TestService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if employee := client.GetEmployeeByGitHubID("ghuser1"); employee == nil || employee.UID != "testuser1" {
+	if employee := client.GetEmployeeByGitHubID("GHUSER1"); employee == nil || employee.UID != "testuser1" {
 		t.Fatalf("unexpected employee: %+v", employee)
 	}
 	if employee := client.GetEmployeeByGitHubID("outsider"); employee != nil {
@@ -102,7 +102,7 @@ func TestServiceUpdatesAndCancellation(t *testing.T) {
 	for _, stop := range []string{"watch context", "close"} {
 		t.Run(stop, func(t *testing.T) {
 			data := orgdatacore.CreateTestData()
-			data.Indexes.GitHubIDMappings.GitHubIDToUID = map[string]string{"new-account": "testuser1"}
+			data.Indexes.GitHubIDMappings.GitHubIDToUID = map[string]string{"New-Account": "testuser1"}
 			next, err := json.Marshal(data)
 			if err != nil {
 				t.Fatal(err)
@@ -128,7 +128,7 @@ func TestServiceUpdatesAndCancellation(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("directory update did not complete")
 			}
-			if employee := client.GetEmployeeByGitHubID("new-account"); employee == nil || employee.UID != "testuser1" {
+			if employee := client.GetEmployeeByGitHubID("NEW-ACCOUNT"); employee == nil || employee.UID != "testuser1" {
 				t.Errorf("updated account was not recognized: %+v", employee)
 			}
 			if employee := client.GetEmployeeByGitHubID("ghuser1"); employee != nil {

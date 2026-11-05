@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	orgdatacore "github.com/openshift-eng/cyborg-data/go"
 )
@@ -31,11 +32,16 @@ type service struct {
 // NewService loads a directory from source and takes ownership of that source,
 // closing it on construction failure or when the returned service is closed.
 func NewService(ctx context.Context, source orgdatacore.DataSource) (Service, error) {
+	source = NormalizeGitHubIDs(source)
 	directory := orgdatacore.NewService()
 	if err := directory.LoadFromDataSource(ctx, source); err != nil {
 		return nil, errors.Join(fmt.Errorf("load Cyborg data: %w", err), source.Close())
 	}
 	return &service{Service: directory, source: source}, nil
+}
+
+func (service *service) GetEmployeeByGitHubID(login string) *orgdatacore.Employee {
+	return service.Service.GetEmployeeByGitHubID(strings.ToLower(login))
 }
 
 func (service *service) Watch(ctx context.Context) error {

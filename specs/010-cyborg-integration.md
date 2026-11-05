@@ -39,6 +39,16 @@ Cancellation is supplied by the caller for each operation rather than retained
 as service state. Shutdown cancels refresh before closing the directory source.
 Taking ownership of a source includes releasing it if initial loading fails.
 
+### GitHub Account Matching
+
+GitHub accounts are matched case-insensitively, consistently across initial
+loading and later refreshes. Case variants identifying the same employee are
+compatible; variants identifying different employees make the directory data
+ambiguous and must be rejected. Conflict errors must not disclose raw logins.
+
+Account matching resolves lookup spelling. It does not decide whether separate
+GitHub accounts should count as one person in a consuming feature.
+
 ## Verification
 
 Verify disabled access, invalid credentials, initial-load failure, cancellation,
