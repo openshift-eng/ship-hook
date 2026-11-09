@@ -23,6 +23,7 @@ import (
 	"github.com/openshift-eng/ship-hook/pkg/featuregate"
 	"github.com/openshift-eng/ship-hook/pkg/permissions"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/example"
+	"github.com/openshift-eng/ship-hook/pkg/subplugins/metahold"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/readyforhumans"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/twohumanapprovals"
 )
@@ -165,6 +166,7 @@ func main() {
 
 	dispatcher := dispatch.NewDispatcher(logger, resolver)
 	dispatcher.Register(example.New(ghc))
+	dispatcher.Register(metahold.New(ghc))
 	dispatcher.Register(readyforhumans.New(ghc, resolver, gates, perms))
 	dispatcher.Register(twohumanapprovals.New(ghc, perms))
 

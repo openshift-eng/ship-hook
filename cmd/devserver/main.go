@@ -18,6 +18,7 @@ import (
 	"github.com/openshift-eng/ship-hook/pkg/featuregate"
 	"github.com/openshift-eng/ship-hook/pkg/permissions"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/example"
+	"github.com/openshift-eng/ship-hook/pkg/subplugins/metahold"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/readyforhumans"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/twohumanapprovals"
 	"github.com/openshift-eng/ship-hook/pkg/testhelpers"
@@ -64,6 +65,7 @@ func main() {
 		resolver = config.NewResolver(&config.Config{
 			Plugins: []config.PluginConfig{
 				{Name: "example"},
+				{Name: "meta-hold"},
 				{Name: "ready-for-humans"},
 				{Name: "two-human-approvals"},
 			},
@@ -80,17 +82,20 @@ func main() {
 	})
 
 	ghc := testhelpers.NewCheckRunClient()
+	labels := testhelpers.NewLabelClient(ghc.FakeClient)
 
 	hmacTokenGenerator := func() []byte { return []byte(devHMAC) }
 	eventServer := githubeventserver.New(esOpts, hmacTokenGenerator, logger)
 
 	dispatcher := dispatch.NewDispatcher(logger, resolver)
 	dispatcher.Register(example.New(ghc))
+	dispatcher.Register(metahold.New(labels))
 	dispatcher.Register(readyforhumans.New(ghc, resolver, gates, perms))
 	dispatcher.Register(twohumanapprovals.New(ghc, perms))
 
 	eventServer.RegisterHandlePullRequestEvent(func(log *logrus.Entry, event github.PullRequestEvent) {
 		ghc.RecordPullRequest(event.PullRequest)
+		labels.RecordLabels(event.Repo.Owner.Login, event.Repo.Name, event.Number, event.PullRequest.Labels)
 		dispatcher.HandlePullRequestEvent(log, event)
 	})
 	eventServer.RegisterHandleIssueCommentEvent(func(log *logrus.Entry, event github.IssueCommentEvent) {
@@ -127,6 +132,7 @@ func main() {
 		ghc.IssueLabelsRemoved = nil
 		ghc.AssigneesAdded = nil
 		ghc.ResetCheckRuns()
+		labels.ResetLabels()
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "state reset") //nolint:errcheck
 	})
