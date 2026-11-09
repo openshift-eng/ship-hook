@@ -7,6 +7,7 @@ SHIP Hook is an external [Prow](https://docs.prow.k8s.io/) plugin that receives 
 | Plugin | Description |
 |--------|-------------|
 | `ready-for-humans` | Adds a label to PRs when [CodeRabbit](https://coderabbit.ai/) submits an approving review, signaling the PR is ready for human review |
+| [two-human-approvals](specs/012-two-human-approvals.md) | Reports a check while PRs opened by `redhat-chai-bot` await participation from two eligible humans |
 | `example` | Reference implementation that logs received events |
 
 ## Configuration
@@ -57,6 +58,10 @@ _output/ship-hook \
   --dry-run=false
 ```
 
+Plugins that publish GitHub checks require GitHub App authentication with
+Checks write permission. To keep `two-human-approvals` advisory, leave its check
+out of required checks in repository rules.
+
 ## Development
 
 An interactive dev server runs ship-hook with an in-memory fake GitHub client:
@@ -67,6 +72,23 @@ make dev-webhook EVENT=pull_request_review PAYLOAD=test/integration/testdata/rev
 make dev-state                     # inspect mutations
 make dev-reset                     # clear state
 ```
+
+The dev server permits `alice` and `bob` to approve PRs, without Cyborg
+credentials. CodeRabbit access remains denied. To exercise the approval check:
+
+```shell
+make dev-webhook EVENT=pull_request PAYLOAD=test/integration/testdata/two_human_approvals_opened.json
+make dev-state
+make dev-webhook EVENT=issue_comment PAYLOAD=test/integration/testdata/two_human_approvals_comment.json
+make dev-state
+```
+
+The first payload opens a bot-authored PR requested by `alice`; its check is
+`in_progress`. The second supplies an approval from `bob`; the same check becomes
+`completed` with conclusion `success`. Inspect `check_runs` in the state response.
+The dev server retains PR snapshots and delivered comments/reviews for later
+head lookups and history evaluation. Send a PR or review webhook before comment
+webhooks so the fake client knows the PR's head commit.
 
 ## Log Explorer
 

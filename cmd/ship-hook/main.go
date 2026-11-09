@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -16,17 +17,18 @@ import (
 	"sigs.k8s.io/prow/pkg/metrics"
 	"sigs.k8s.io/prow/pkg/pjutil"
 
-	orgdatacore "github.com/openshift-eng/cyborg-data/go"
-
 	"github.com/openshift-eng/ship-hook/pkg/config"
+	"github.com/openshift-eng/ship-hook/pkg/cyborg"
 	"github.com/openshift-eng/ship-hook/pkg/dispatch"
 	"github.com/openshift-eng/ship-hook/pkg/featuregate"
 	"github.com/openshift-eng/ship-hook/pkg/permissions"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/example"
 	"github.com/openshift-eng/ship-hook/pkg/subplugins/readyforhumans"
+	"github.com/openshift-eng/ship-hook/pkg/subplugins/twohumanapprovals"
 )
 
 type options struct {
+	cyborgOptions          cyborg.Options
 	eventServerOptions     githubeventserver.Options
 	instrumentationOptions flagutil.InstrumentationOptions
 	github                 flagutil.GitHubOptions
@@ -35,7 +37,6 @@ type options struct {
 	logLevel               string
 	configPath             string
 	supplementalDir        string
-	cyborgCredentialsFile  string
 }
 
 func gatherOptions() options {
@@ -45,12 +46,12 @@ func gatherOptions() options {
 	o.eventServerOptions.Bind(fs)
 	o.instrumentationOptions.AddFlags(fs)
 	o.github.AddFlags(fs)
+	o.cyborgOptions.AddFlags(fs)
 	fs.StringVar(&o.hmacSecretFile, "hmac-secret-file", "/etc/webhook/hmac", "Path to the file containing the GitHub HMAC secret")
 	fs.BoolVar(&o.dryRun, "dry-run", true, "Dry run for testing (uses no mutations)")
 	fs.StringVar(&o.logLevel, "log-level", "debug", "Log level (trace, debug, info, warn, error, fatal, panic)")
 	fs.StringVar(&o.configPath, "config-path", "", "Path to the ship-hook config file")
 	fs.StringVar(&o.supplementalDir, "supplemental-config-dir", "", "Path to a directory of supplemental config files")
-	fs.StringVar(&o.cyborgCredentialsFile, "cyborg.credentials-file", "", "Path to GCP service account JSON for cyborg queries")
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "error parsing flags: %v\n", err)
@@ -70,8 +71,21 @@ func (o *options) validate() error {
 	if err := o.eventServerOptions.DefaultAndValidate(); err != nil {
 		return fmt.Errorf("invalid event server options: %w", err)
 	}
+	if err := o.cyborgOptions.Validate(); err != nil {
+		return fmt.Errorf("invalid Cyborg options: %w", err)
+	}
 
 	return nil
+}
+
+func isKnownHumanRedHatter(knownRedHatter func(string) bool) func(string) bool {
+	isHuman := func(login string) bool {
+		return login != "" && !strings.EqualFold(login, "redhat-chai-bot") &&
+			!strings.HasSuffix(strings.ToLower(login), "[bot]")
+	}
+	return func(login string) bool {
+		return knownRedHatter != nil && isHuman(login) && knownRedHatter(login)
+	}
 }
 
 func main() {
@@ -95,41 +109,39 @@ func main() {
 	gates := featuregate.New(os.LookupEnv, featuregate.AllGates...)
 	gates.LogStates(logger)
 
-	var coderabbitAccessFn func(string) bool
+	var knownRedHatter func(string) bool
 	ctx, cyborgCancel := context.WithCancel(context.Background())
 	defer cyborgCancel()
-	if o.cyborgCredentialsFile != "" {
-		creds, err := os.ReadFile(o.cyborgCredentialsFile)
-		if err != nil {
-			logger.WithError(err).Fatal("Failed to read cyborg credentials file")
-		}
-
-		gcsSource, err := orgdatacore.NewGCSDataSourceWithSDK(ctx,
-			"resolved-org", "orgdata/comprehensive_index_dump.json",
-			orgdatacore.WithCredentialsJSON(string(creds)),
-			orgdatacore.WithProjectID("openshift-crt"),
-		)
-		if err != nil {
-			logger.WithError(err).Fatal("Failed to create cyborg GCS data source")
-		}
-
-		cyborgService := orgdatacore.NewService()
-		if err := cyborgService.LoadFromDataSource(ctx, gcsSource); err != nil {
-			logger.WithError(err).Fatal("Failed to load cyborg data")
-		}
+	cyborgService, err := o.cyborgOptions.NewService(ctx)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to initialize Cyborg")
+	}
+	if cyborgService != nil {
+		defer func() {
+			cyborgCancel()
+			if err := cyborgService.Close(); err != nil {
+				logger.WithError(err).Error("Failed to close Cyborg")
+			}
+		}()
 		logger.Info("Cyborg data loaded successfully")
 
 		go func() {
-			if err := cyborgService.StartDataSourceWatcher(ctx, gcsSource); err != nil {
+			if err := cyborgService.Watch(ctx); err != nil {
 				logger.WithError(err).Error("Cyborg data source watcher failed")
 			}
 		}()
 
-		coderabbitAccessFn = func(login string) bool {
+		knownRedHatter = func(login string) bool {
 			return cyborgService.GetEmployeeByGitHubID(login) != nil
 		}
+	} else {
+		logger.Info("Cyborg access disabled; directory-backed approval checks cannot pass")
 	}
-	perms := permissions.NewStub(coderabbitAccessFn)
+
+	perms := permissions.NewStub(map[permissions.Operation]func(string) bool{
+		{Action: "access", Resource: "coderabbit"}: knownRedHatter,
+		{Action: "approve", Resource: "pr"}:        isKnownHumanRedHatter(knownRedHatter),
+	})
 
 	hmacTokenGenerator := func() []byte {
 		data, err := os.ReadFile(o.hmacSecretFile)
@@ -154,6 +166,7 @@ func main() {
 	dispatcher := dispatch.NewDispatcher(logger, resolver)
 	dispatcher.Register(example.New(ghc))
 	dispatcher.Register(readyforhumans.New(ghc, resolver, gates, perms))
+	dispatcher.Register(twohumanapprovals.New(ghc, perms))
 
 	eventServer.RegisterHandlePullRequestEvent(dispatcher.HandlePullRequestEvent)
 	eventServer.RegisterHandleIssueCommentEvent(dispatcher.HandleIssueCommentEvent)
