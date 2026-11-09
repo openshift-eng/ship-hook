@@ -1,0 +1,48 @@
+{
+  "action": "labeled",
+  "number": 1,
+  "pull_request": {
+    "number": 1,
+    "state": "open",
+    "title": "Test pull request",
+    "body": "This is a test PR",
+    "user": {
+      "login": "test-author"
+    },
+    "base": {
+      "ref": "main",
+      "repo": {
+        "owner": {
+          "login": "test-org"
+        },
+        "name": "test-repo",
+        "full_name": "test-org/test-repo"
+      }
+    },
+    "head": {
+      "ref": "feature-branch",
+      "sha": "abc123def456"
+    },
+    "labels": [
+      {
+        "name": "bug"
+      },
+      {
+        "name": "do-not-merge/hold"
+      }
+    ]
+  },
+  "repository": {
+    "owner": {
+      "login": "test-org"
+    },
+    "name": "test-repo",
+    "full_name": "test-org/test-repo"
+  },
+  "sender": {
+    "login": "test-author"
+  },
+  "label": {
+    "name": "do-not-merge/hold"
+  }
+}

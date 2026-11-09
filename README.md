@@ -8,6 +8,7 @@ SHIP Hook is an external [Prow](https://docs.prow.k8s.io/) plugin that receives 
 |--------|-------------|
 | `ready-for-humans` | Adds a label to PRs when [CodeRabbit](https://coderabbit.ai/) submits an approving review, signaling the PR is ready for human review |
 | [two-human-approvals](specs/012-two-human-approvals.md) | Reports a check while PRs opened by `redhat-chai-bot` await participation from two eligible humans |
+| [meta-hold](specs/013-meta-hold.md) | Keeps `do-not-merge/meta` present exactly while any other `do-not-merge/` label is present |
 | `example` | Reference implementation that logs received events |
 
 ## Configuration
@@ -16,6 +17,7 @@ SHIP Hook uses a YAML config file with layered overrides at the top-level, organ
 
 ```yaml
 plugins:
+  - name: meta-hold
   - name: ready-for-humans
     config:
       label: ready-for-humans
@@ -37,6 +39,12 @@ orgs:
 Supplemental config files can be placed in a separate directory and merged into the main config, allowing org/repo owners to manage their own configuration shards.
 
 See `specs/004-configuration.md` for full details.
+
+`meta-hold` needs no plugin-specific configuration. It reconciles current GitHub labels
+when a PR is opened, reopened, labeled, or unlabeled. The meta label does not count as
+a hold itself: removing the last other hold removes it, removing it while another
+hold remains restores it, and adding it alone removes it. Label matching is
+case-insensitive, as on GitHub. Ensure `do-not-merge/meta` exists in the repository.
 
 ## Building
 
@@ -89,6 +97,16 @@ The first payload opens a bot-authored PR requested by `alice`; its check is
 The dev server retains PR snapshots and delivered comments/reviews for later
 head lookups and history evaluation. Send a PR or review webhook before comment
 webhooks so the fake client knows the PR's head commit.
+
+The dev server also enables `meta-hold` and retains current PR label snapshots.
+To add the aggregate hold and then remove it when the last other hold disappears:
+
+```shell
+make dev-webhook EVENT=pull_request PAYLOAD=test/integration/testdata/meta_hold_labeled.json
+make dev-state
+make dev-webhook EVENT=pull_request PAYLOAD=test/integration/testdata/meta_hold_unlabeled.json
+make dev-state
+```
 
 ## Log Explorer
 

@@ -192,8 +192,8 @@ func TestDispatcherShutdownWaitsForHandlers(t *testing.T) {
 	}()
 
 	select {
-	case <-shutdownDone:
-		t.Fatal("Shutdown returned before handler finished")
+	case err := <-shutdownDone:
+		t.Fatalf("Shutdown returned before handler finished: %v", err)
 	case <-time.After(50 * time.Millisecond):
 	}
 
